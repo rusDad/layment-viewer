@@ -12,7 +12,7 @@ const CURVE_STEP_MM = 0.5;
 
 app.use(express.static('public'));
 
-app.post('/api/upload-svg', upload.single('file'), (req, res) => {
+app.post('/svg3d-api/upload-svg', upload.single('file'), (req, res) => {
   const errors = [];
 
   if (!req.file) {
