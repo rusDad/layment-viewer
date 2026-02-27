@@ -43,7 +43,7 @@ npm run dev
 
 ## API
 
-`POST /api/upload-svg` (multipart/form-data, поле `file`)
+`POST /svg3d-api/upload-svg` (multipart/form-data, поле `file`)
 
 Ответ:
 
