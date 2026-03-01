@@ -102,7 +102,7 @@ function buildModel(geometry) {
   const merged = mergeGeometries([upper, lower]);
   merged.computeVertexNormals();
 
-  const material = new THREE.MeshStandardMaterial({ color: 0xbebebe, metalness: 0.05, roughness: 0.65 });
+  const material = new THREE.MeshStandardMaterial({ color: 0x5f8f67, metalness: 0.05, roughness: 0.65 });
   mesh = new THREE.Mesh(merged, material);
   scene.add(mesh);
 
@@ -110,12 +110,34 @@ function buildModel(geometry) {
 }
 
 function contourToShape(outer, holes) {
-  const shape = new THREE.Shape(outer.map((p) => new THREE.Vector2(p.x, -p.y)));
+  const bounds = calcContourBounds(outer);
+  const toLocal = (p) => new THREE.Vector2(
+    p.x - bounds.minX,
+    bounds.maxY - p.y
+  );
+
+  const shape = new THREE.Shape(outer.map(toLocal));
   holes.forEach((h) => {
-    const path = new THREE.Path(h.map((p) => new THREE.Vector2(p.x, -p.y)));
+    const path = new THREE.Path(h.map(toLocal));
     shape.holes.push(path);
   });
   return shape;
+}
+
+function calcContourBounds(points) {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+
+  points.forEach((p) => {
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x);
+    maxY = Math.max(maxY, p.y);
+  });
+
+  return { minX, minY, maxX, maxY };
 }
 
 function fitCamera(obj) {
