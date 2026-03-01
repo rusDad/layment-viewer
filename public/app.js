@@ -120,12 +120,14 @@ function buildModel(geometry) {
 
   const topSurfaceZ = merged.boundingBox.max.z;
   const capPlaneZ = capGeometry.boundingBox.max.z;
-  const capOffset = Math.max(geometry.extrusion.baseDepth * 0.0005, 0.01);
+  const capOffset = Math.max(geometry.extrusion.baseDepth * 0.0002, 0.001);
   capGeometry.translate(0, 0, topSurfaceZ - capPlaneZ + capOffset);
+  capGeometry.computeVertexNormals();
   const capMaterial = new THREE.MeshStandardMaterial({
     color: 0x9a9a9a,
     metalness: 0.05,
     roughness: 0.75,
+    side: THREE.DoubleSide,
     polygonOffset: true,
     polygonOffsetFactor: -1,
     polygonOffsetUnits: -1
