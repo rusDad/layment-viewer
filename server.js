@@ -73,7 +73,7 @@ function parseSvgToContours(svgText, errors) {
 
   const viewBox = parseViewBox(svg['@_viewBox']);
   const nodes = [];
-  collectNodes(svg, nodes);
+  collectNodes(svg, nodes, identityMatrix());
 
   const contours = [];
   for (const node of nodes) {
@@ -81,12 +81,12 @@ function parseSvgToContours(svgText, errors) {
 
     if (node.tag === 'path' && node.attrs['@_d']) {
       const localContours = flattenPath(node.attrs['@_d']);
-      localContours.forEach((c) => contours.push(normalizeContour(c, viewBox)));
+      localContours.forEach((c) => contours.push(normalizeContour(applyMatrixToContour(c, node.matrix), viewBox)));
     } else if (node.tag === 'polygon' && node.attrs['@_points']) {
       const pts = parsePolygonPoints(node.attrs['@_points']);
       if (pts.length >= 3) {
         if (!samePoint(pts[0], pts[pts.length - 1])) pts.push({ ...pts[0] });
-        contours.push(normalizeContour(pts, viewBox));
+        contours.push(normalizeContour(applyMatrixToContour(pts, node.matrix), viewBox));
       }
     } else if (node.tag === 'rect') {
       const x = num(node.attrs['@_x'], 0);
@@ -94,25 +94,25 @@ function parseSvgToContours(svgText, errors) {
       const w = num(node.attrs['@_width'], 0);
       const h = num(node.attrs['@_height'], 0);
       if (w > 0 && h > 0) {
-        contours.push(normalizeContour([
+        contours.push(normalizeContour(applyMatrixToContour([
           { x, y },
           { x: x + w, y },
           { x: x + w, y: y + h },
           { x, y: y + h },
           { x, y }
-        ], viewBox));
+        ], node.matrix), viewBox));
       }
     } else if (node.tag === 'circle') {
       const cx = num(node.attrs['@_cx'], 0);
       const cy = num(node.attrs['@_cy'], 0);
       const r = num(node.attrs['@_r'], 0);
-      if (r > 0) contours.push(normalizeContour(sampleCircle(cx, cy, r), viewBox));
+      if (r > 0) contours.push(normalizeContour(applyMatrixToContour(sampleCircle(cx, cy, r), node.matrix), viewBox));
     } else if (node.tag === 'ellipse') {
       const cx = num(node.attrs['@_cx'], 0);
       const cy = num(node.attrs['@_cy'], 0);
       const rx = num(node.attrs['@_rx'], 0);
       const ry = num(node.attrs['@_ry'], 0);
-      if (rx > 0 && ry > 0) contours.push(normalizeContour(sampleEllipse(cx, cy, rx, ry), viewBox));
+      if (rx > 0 && ry > 0) contours.push(normalizeContour(applyMatrixToContour(sampleEllipse(cx, cy, rx, ry), node.matrix), viewBox));
     }
   }
 
@@ -123,23 +123,90 @@ function parseSvgToContours(svgText, errors) {
   return { contours };
 }
 
-function collectNodes(node, out) {
-  const keys = Object.keys(node || {});
+function collectNodes(node, out, parentMatrix) {
+  const keys = Object.keys(node || {}).filter((key) => !key.startsWith('@_'));
   for (const key of keys) {
     const value = node[key];
     if (!value) continue;
 
-    if (['path', 'polygon', 'rect', 'circle', 'ellipse'].includes(key)) {
-      if (Array.isArray(value)) {
-        value.forEach((v) => out.push({ tag: key, attrs: v }));
-      } else {
-        out.push({ tag: key, attrs: value });
+    const collectChild = (tag, childNode) => {
+      if (!childNode || typeof childNode !== 'object') return;
+      const nodeTransform = parseTransform(childNode['@_transform']);
+      const current = multiplyMatrix(parentMatrix, nodeTransform);
+      if (['path', 'polygon', 'rect', 'circle', 'ellipse'].includes(tag)) {
+        out.push({ tag, attrs: childNode, matrix: current });
       }
-    } else if (typeof value === 'object') {
-      if (Array.isArray(value)) value.forEach((v) => collectNodes(v, out));
-      else collectNodes(value, out);
+      collectNodes(childNode, out, current);
+    };
+
+    if (Array.isArray(value)) {
+      value.forEach((v) => collectChild(key, v));
+    } else {
+      collectChild(key, value);
     }
   }
+}
+
+function identityMatrix() {
+  return [1, 0, 0, 1, 0, 0];
+}
+
+function multiplyMatrix(m1, m2) {
+  return [
+    m1[0] * m2[0] + m1[2] * m2[1],
+    m1[1] * m2[0] + m1[3] * m2[1],
+    m1[0] * m2[2] + m1[2] * m2[3],
+    m1[1] * m2[2] + m1[3] * m2[3],
+    m1[0] * m2[4] + m1[2] * m2[5] + m1[4],
+    m1[1] * m2[4] + m1[3] * m2[5] + m1[5]
+  ];
+}
+
+function applyToPoint(matrix, point) {
+  return {
+    x: matrix[0] * point.x + matrix[2] * point.y + matrix[4],
+    y: matrix[1] * point.x + matrix[3] * point.y + matrix[5]
+  };
+}
+
+function applyMatrixToContour(points, matrix) {
+  return points.map((point) => applyToPoint(matrix, point));
+}
+
+function parseTransform(rawTransform) {
+  if (!rawTransform || typeof rawTransform !== 'string') return identityMatrix();
+
+  const transformRegex = /([a-zA-Z]+)\s*\(([^)]*)\)/g;
+  let match;
+  let matrix = identityMatrix();
+
+  while ((match = transformRegex.exec(rawTransform)) !== null) {
+    const op = match[1].toLowerCase();
+    const values = (match[2].match(/[-+]?\d*\.?\d+(?:e[-+]?\d+)?/gi) || []).map(Number);
+    let opMatrix = null;
+
+    if (op === 'matrix') {
+      if (values.length === 6 && values.every(Number.isFinite)) {
+        opMatrix = values;
+      } else {
+        console.warn(`SVG transform matrix() пропущен из-за невалидных параметров: "${match[0]}"`);
+      }
+    } else if (op === 'translate') {
+      if (values.length >= 1 && values.every(Number.isFinite)) {
+        opMatrix = [1, 0, 0, 1, values[0], values[1] || 0];
+      } else {
+        console.warn(`SVG transform translate() пропущен из-за невалидных параметров: "${match[0]}"`);
+      }
+    } else {
+      console.warn(`SVG transform "${op}" пока не поддерживается и будет проигнорирован.`);
+    }
+
+    if (opMatrix) {
+      matrix = multiplyMatrix(opMatrix, matrix);
+    }
+  }
+
+  return matrix;
 }
 
 function parseViewBox(vb) {

@@ -6,7 +6,8 @@ MVP веб-сервис: загружает SVG, валидирует конту
 
 - Единицы: `1 SVG unit = 1 mm`.
 - Если есть `viewBox`, координаты нормализуются как `x - viewBox.minX`, `y - viewBox.minY`.
-- Трансформации `transform` сейчас **не поддерживаются**.
+- Трансформации `transform` поддерживаются для `matrix(a b c d e f)` и `translate(x[, y])` с наследованием по дереву (`<g>` -> дочерние элементы).
+- Неподдерживаемые трансформации (`rotate/scale/skew/...`) игнорируются с WARN в логах сервера.
 - Проверка самопересечений базовая (отрезок-отрезок).
 - Источники геометрии: `path`, `polygon`, `rect`, `circle`, `ellipse`.
 - Кривые в `path` (`C/Q/A`) аппроксимируются полилинией с шагом ~0.5 мм.
@@ -93,3 +94,21 @@ npm run dev
   <path d="M0 0 L100 0 L100 50 L0 50"/>
 </svg>
 ```
+
+
+## How to verify transforms
+
+1. Запустить сервер:
+
+```bash
+npm run dev
+```
+
+2. Отправить SVG с `matrix + translate`:
+
+```bash
+curl -s -F file=@fixtures/sample.svg http://localhost:3000/svg3d-api/upload-svg | jq
+```
+
+3. Открыть UI `http://localhost:3000/svg3d/` и загрузить `fixtures/sample.svg`.
+   Внутренние карманы должны совпадать с исходным SVG без смещений.
