@@ -114,6 +114,7 @@ function buildModel(geometry) {
   const baseMesh = new THREE.Mesh(merged, baseMaterial);
 
   const capGeometry = new THREE.ShapeGeometry(shapeTop, 16);
+  capGeometry.rotateX(Math.PI);
   capGeometry.translate(0, 0, 0.02);
   const capMaterial = new THREE.MeshStandardMaterial({
     color: 0x9a9a9a,
