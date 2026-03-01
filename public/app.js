@@ -115,7 +115,13 @@ function buildModel(geometry) {
 
   const capGeometry = new THREE.ShapeGeometry(shapeTop, 16);
   capGeometry.rotateX(Math.PI);
-  capGeometry.translate(0, 0, 0.02);
+  merged.computeBoundingBox();
+  capGeometry.computeBoundingBox();
+
+  const topSurfaceZ = merged.boundingBox.max.z;
+  const capPlaneZ = capGeometry.boundingBox.max.z;
+  const capOffset = Math.max(geometry.extrusion.baseDepth * 0.0005, 0.01);
+  capGeometry.translate(0, 0, topSurfaceZ - capPlaneZ + capOffset);
   const capMaterial = new THREE.MeshStandardMaterial({
     color: 0x9a9a9a,
     metalness: 0.05,
