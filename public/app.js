@@ -26,7 +26,7 @@ dir.position.set(80, 120, 100);
 scene.add(dir);
 
 const grid = new THREE.GridHelper(300, 30, 0x444444, 0x2b2b2b);
-scene.add(grid);
+//scene.add(grid);
 
 let modelGroup = null;
 
