@@ -28,7 +28,7 @@ scene.add(dir);
 const grid = new THREE.GridHelper(300, 30, 0x444444, 0x2b2b2b);
 scene.add(grid);
 
-let mesh = null;
+let modelGroup = null;
 
 function resize() {
   const w = root.clientWidth;
@@ -75,10 +75,18 @@ async function uploadSvg() {
 }
 
 function buildModel(geometry) {
-  if (mesh) {
-    scene.remove(mesh);
-    mesh.geometry.dispose();
-    mesh.material.dispose();
+  if (modelGroup) {
+    scene.remove(modelGroup);
+    modelGroup.traverse((obj) => {
+      if (obj.isMesh) {
+        obj.geometry.dispose();
+        if (Array.isArray(obj.material)) {
+          obj.material.forEach((m) => m.dispose());
+        } else {
+          obj.material.dispose();
+        }
+      }
+    });
   }
 
   const shapeTop = contourToShape(geometry.outer, geometry.holes);
@@ -102,11 +110,28 @@ function buildModel(geometry) {
   const merged = mergeGeometries([upper, lower]);
   merged.computeVertexNormals();
 
-  const material = new THREE.MeshStandardMaterial({ color: 0x5f8f67, metalness: 0.05, roughness: 0.65 });
-  mesh = new THREE.Mesh(merged, material);
-  scene.add(mesh);
+  const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x5f8f67, metalness: 0.05, roughness: 0.65 });
+  const baseMesh = new THREE.Mesh(merged, baseMaterial);
 
-  fitCamera(mesh);
+  const capGeometry = new THREE.ShapeGeometry(shapeTop, 16);
+  capGeometry.translate(0, 0, 0.02);
+  const capMaterial = new THREE.MeshStandardMaterial({
+    color: 0x9a9a9a,
+    metalness: 0.05,
+    roughness: 0.75,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1
+  });
+  const capMesh = new THREE.Mesh(capGeometry, capMaterial);
+
+  modelGroup = new THREE.Group();
+  modelGroup.rotation.x = -Math.PI / 2;
+  modelGroup.add(baseMesh);
+  modelGroup.add(capMesh);
+  scene.add(modelGroup);
+
+  fitCamera(modelGroup);
 }
 
 function contourToShape(outer, holes) {
