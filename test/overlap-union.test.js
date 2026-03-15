@@ -4,30 +4,56 @@ const path = require('path');
 
 const { parseSvgToContours, validateAndClassifyContours } = require('../server');
 
-const overlapSvg = fs.readFileSync(path.join(__dirname, '../fixtures/overlap-pockets.svg'), 'utf8');
+const fixtures = [
+  'overlap-circle-rect-side.svg',
+  'overlap-circle-rect-vertical.svg',
+  'overlap-rect-rect-side.svg',
+  'overlap-rect-rect-t.svg',
+  'overlap-real-contour-primitive.svg'
+];
 
-const parseErrors = [];
-const parsed = parseSvgToContours(overlapSvg, parseErrors);
-assert.deepStrictEqual(parseErrors, [], `parse errors: ${parseErrors.join('; ')}`);
+fixtures.forEach((fixtureName) => {
+  const svg = fs.readFileSync(path.join(__dirname, `../fixtures/${fixtureName}`), 'utf8');
 
-const validationErrors = [];
-const geometry = validateAndClassifyContours(parsed.contours, validationErrors);
-assert.deepStrictEqual(validationErrors, [], `validation errors: ${validationErrors.join('; ')}`);
+  const parseErrors = [];
+  const parsed = parseSvgToContours(svg, parseErrors);
+  assert.deepStrictEqual(parseErrors, [], `${fixtureName}: parse errors: ${parseErrors.join('; ')}`);
 
-assert.ok(Array.isArray(geometry.holes), 'holes must be an array');
-assert.strictEqual(geometry.holes.length, 1, 'overlapping pockets must be merged into a single hole loop');
+  const validationErrors = [];
+  const geometry = validateAndClassifyContours(parsed.contours, validationErrors);
+  assert.deepStrictEqual(validationErrors, [], `${fixtureName}: validation errors: ${validationErrors.join('; ')}`);
 
-const hole = geometry.holes[0];
-const closedHole = closeRing(hole);
+  assert.ok(Array.isArray(geometry.holes), `${fixtureName}: holes must be an array`);
+  assert.strictEqual(geometry.holes.length, 1, `${fixtureName}: overlap pockets must be merged into one hole`);
 
-assert.ok(Array.isArray(hole), 'merged hole loop must be an array');
-assert.ok(hole.length >= 8, 'merged hole loop must keep a reasonable amount of vertices after cleanup');
-assert.ok(isRingClosed(closedHole), 'merged hole loop must be closed');
-assert.ok(!hasSequentialDuplicates(closedHole), 'merged hole loop must not contain sequential duplicate points');
-assert.ok(!isSelfIntersecting(closedHole), 'merged hole loop must not self-intersect');
-assert.ok(Math.abs(polygonArea(closedHole)) > 1e-4, 'merged hole loop area must stay non-degenerate');
+  const outer = closeRing(geometry.outer);
+  const hole = geometry.holes[0];
+  const closedHole = closeRing(hole);
 
-console.log('OK: overlapping pockets are merged into one resulting hole loop.');
+  assert.ok(Array.isArray(hole), `${fixtureName}: merged hole must be an array`);
+  assert.ok(closedHole.length >= 8 && closedHole.length <= 2000, `${fixtureName}: merged hole must keep a reasonable amount of vertices`);
+  assert.ok(isRingClosed(closedHole), `${fixtureName}: merged hole must be closed`);
+  assert.ok(!hasSequentialDuplicates(closedHole), `${fixtureName}: merged hole must not contain sequential duplicates`);
+  assert.ok(!isSelfIntersecting(closedHole), `${fixtureName}: merged hole must not self-intersect`);
+
+  const holeArea = Math.abs(polygonArea(closedHole));
+  const outerArea = Math.abs(polygonArea(outer));
+  assert.ok(holeArea > 1e-3, `${fixtureName}: merged hole area must stay non-degenerate`);
+  assert.ok(holeArea < outerArea * 0.95, `${fixtureName}: merged hole area must remain plausibly smaller than outer`);
+
+  assert.ok(
+    closedHole.slice(0, -1).every((point) => pointInPolygon(point, outer)),
+    `${fixtureName}: merged hole must stay inside outer contour`
+  );
+
+  const holeBBox = calcBBox(closedHole);
+  assert.ok(
+    holeBBox.maxX - holeBBox.minX > 1e-3 && holeBBox.maxY - holeBBox.minY > 1e-3,
+    `${fixtureName}: merged hole bbox must stay non-collapsed`
+  );
+});
+
+console.log(`OK: overlap union regression passed for ${fixtures.length} fixtures.`);
 
 function isRingClosed(points, eps = 1e-6) {
   if (!points.length) return false;
@@ -75,6 +101,31 @@ function polygonArea(points) {
     area += points[i].x * points[i + 1].y - points[i + 1].x * points[i].y;
   }
   return area / 2;
+}
+
+function pointInPolygon(point, polygon) {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].x;
+    const yi = polygon[i].y;
+    const xj = polygon[j].x;
+    const yj = polygon[j].y;
+    const intersect = ((yi > point.y) !== (yj > point.y))
+      && (point.x < ((xj - xi) * (point.y - yi)) / ((yj - yi) || 1e-12) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function calcBBox(points) {
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  return {
+    minX: Math.min(...xs),
+    minY: Math.min(...ys),
+    maxX: Math.max(...xs),
+    maxY: Math.max(...ys)
+  };
 }
 
 function samePoint(a, b, eps = 1e-6) {

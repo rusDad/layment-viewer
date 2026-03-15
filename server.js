@@ -11,6 +11,10 @@ const BASE_DEPTH = 35;
 const POCKET_DEPTH = 20;
 const CURVE_STEP_MM = 0.5;
 const UNION_RING_EPSILON = 1e-5;
+// Snap holes to 0.0001 mm grid before polygon-clipping to suppress floating-noise vertices
+// without affecting visible geometry in the viewer.
+const UNION_INPUT_SNAP_STEP = 1e-4;
+const UNION_DEBUG = process.env.UNION_DEBUG === '1';
 
 app.use(express.static('public'));
 
@@ -409,26 +413,57 @@ function validateAndClassifyContours(rawContours, errors) {
 }
 
 function mergeHoleContours(holes, outerPoints, errors) {
-  if (holes.length <= 1) {
-    return holes.map((hole) => ensureRingClosed(hole));
-  }
+  const debugState = {
+    inputHoleRings: holes.length,
+    preNormalizedHoleRings: 0,
+    unionPolygons: 0,
+    postCleanupRings: 0
+  };
 
-  const polygons = buildPocketPolygons(holes);
-  let unionResult;
+  const polygons = buildPocketPolygons(holes, errors, debugState);
+  debugUnion('pre-union', debugState);
 
-  try {
-    unionResult = unionPocketPolygons(polygons);
-  } catch (e) {
-    errors.push(`Ошибка объединения внутренних карманов: ${e.message}`);
+  if (!polygons.length) {
+    if (holes.length > 0) {
+      errors.push('Не осталось валидных внутренних карманов после предобработки перед union.');
+    }
     return [];
   }
 
-  const merged = normalizeUnionResultToRings(unionResult, outerPoints, errors);
+  let unionResult;
+
+  if (polygons.length === 1) {
+    unionResult = polygons;
+  } else {
+    try {
+      unionResult = unionPocketPolygons(polygons);
+    } catch (e) {
+      errors.push(`Ошибка объединения внутренних карманов: ${e.message}`);
+      return [];
+    }
+  }
+
+  const merged = normalizeUnionResultToRings(unionResult, outerPoints, errors, debugState);
+  debugUnion('post-union', debugState);
   return merged.map((ring) => ensureRingClosed(ring));
 }
 
-function buildPocketPolygons(holes) {
-  return holes.map((ring) => [toClipperRing(ring)]);
+function buildPocketPolygons(holes, errors = [], debugState = null) {
+  const polygons = [];
+  holes.forEach((ring, index) => {
+    const normalized = preUnionNormalizeRing(ring, UNION_RING_EPSILON, UNION_INPUT_SNAP_STEP);
+    if (!normalized) {
+      errors.push(`Внутренний карман ${index + 1} отброшен: невалидный контур после предобработки перед union.`);
+      return;
+    }
+    polygons.push([toClipperRing(normalized)]);
+  });
+
+  if (debugState) {
+    debugState.preNormalizedHoleRings = polygons.length;
+  }
+
+  return polygons;
 }
 
 function unionPocketPolygons(polygons) {
@@ -440,10 +475,14 @@ function unionPocketPolygons(polygons) {
   return result;
 }
 
-function normalizeUnionResultToRings(unionResult, outerPoints, errors) {
+function normalizeUnionResultToRings(unionResult, outerPoints, errors, debugState = null) {
   if (!Array.isArray(unionResult)) {
     errors.push('Ошибка объединения внутренних карманов: некорректный формат результата union.');
     return [];
+  }
+
+  if (debugState) {
+    debugState.unionPolygons = unionResult.length;
   }
 
   const mergedRings = [];
@@ -470,7 +509,29 @@ function normalizeUnionResultToRings(unionResult, outerPoints, errors) {
     mergedRings.push(cleanedRing);
   }
 
+  if (debugState) {
+    debugState.postCleanupRings = mergedRings.length;
+  }
+
   return mergedRings;
+}
+
+function preUnionNormalizeRing(points, eps, snapStep) {
+  let ring = stripClosingDuplicate(points);
+  ring = dedupeSequential(ring);
+  ring = snapRing(ring, snapStep);
+  ring = dedupeSequential(ring);
+  ring = removeShortEdges(ring, Math.max(eps, snapStep));
+  ring = dedupeSequential(ring);
+  ring = removeCollinearPoints(ring, eps);
+  ring = dedupeSequential(ring);
+  ring = ensureRingClosed(ring);
+
+  if (ring.length < 4) return null;
+  if (Math.abs(polygonArea(ring)) <= eps * eps) return null;
+  if (isSelfIntersecting(ring)) return null;
+
+  return ring;
 }
 
 function stripClosingDuplicate(points) {
@@ -641,6 +702,27 @@ function dedupeSequential(points) {
     if (!samePoint(points[i], points[i - 1])) out.push(points[i]);
   }
   return out;
+}
+
+function snapCoord(value, step) {
+  if (!Number.isFinite(step) || step <= 0) return value;
+  return Math.round(value / step) * step;
+}
+
+function snapPoint(point, step) {
+  return {
+    x: snapCoord(point.x, step),
+    y: snapCoord(point.y, step)
+  };
+}
+
+function snapRing(points, step) {
+  return points.map((point) => snapPoint(point, step));
+}
+
+function debugUnion(stage, payload) {
+  if (!UNION_DEBUG) return;
+  console.log(`[union-debug:${stage}]`, payload);
 }
 
 function samePoint(a, b, eps = 1e-6) {
