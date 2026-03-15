@@ -36,7 +36,7 @@ app.post('/svg3d-api/upload-svg', upload.single('file'), (req, res) => {
       return res.status(400).json({ ok: false, errors });
     }
 
-    const { outer, holes, bbox, outerArea } = validateAndClassifyContours(data.contours, errors);
+    const { outer, holes, topRegions, bbox, outerArea } = validateAndClassifyContours(data.contours, errors);
     if (errors.length > 0) {
       return res.status(400).json({ ok: false, errors });
     }
@@ -52,6 +52,7 @@ app.post('/svg3d-api/upload-svg', upload.single('file'), (req, res) => {
       geometry: {
         outer,
         holes,
+        topRegions,
         extrusion: {
           baseDepth: BASE_DEPTH,
           pocketDepth: POCKET_DEPTH
@@ -399,20 +400,26 @@ function validateAndClassifyContours(rawContours, errors) {
     }
   }
 
-  const mergedHoles = mergeHoleContours(holes, outer.points, errors);
+  const { mergedHoles, pocketUnion } = computePocketUnion(holes, outer.points, errors);
   const bbox = calcBBox(outer.points);
   const outerPoints = ensureOrientation(outer.points.slice(0, -1), true);
   const holePoints = mergedHoles.map((h) => ensureOrientation(h.slice(0, -1), false));
+  const topRegions = buildTopSolidRegions(outerPoints, pocketUnion, errors);
 
   return {
     outer: outerPoints,
     holes: holePoints,
+    topRegions,
     bbox,
     outerArea: outer.absArea
   };
 }
 
 function mergeHoleContours(holes, outerPoints, errors) {
+  return computePocketUnion(holes, outerPoints, errors).mergedHoles;
+}
+
+function computePocketUnion(holes, outerPoints, errors) {
   const debugState = {
     inputHoleRings: holes.length,
     preNormalizedHoleRings: 0,
@@ -427,7 +434,7 @@ function mergeHoleContours(holes, outerPoints, errors) {
     if (holes.length > 0) {
       errors.push('Не осталось валидных внутренних карманов после предобработки перед union.');
     }
-    return [];
+    return { mergedHoles: [], pocketUnion: [] };
   }
 
   let unionResult;
@@ -439,13 +446,16 @@ function mergeHoleContours(holes, outerPoints, errors) {
       unionResult = unionPocketPolygons(polygons);
     } catch (e) {
       errors.push(`Ошибка объединения внутренних карманов: ${e.message}`);
-      return [];
+      return { mergedHoles: [], pocketUnion: [] };
     }
   }
 
   const merged = normalizeUnionResultToRings(unionResult, outerPoints, errors, debugState);
   debugUnion('post-union', debugState);
-  return merged.map((ring) => ensureRingClosed(ring));
+  return {
+    mergedHoles: merged.map((ring) => ensureRingClosed(ring)),
+    pocketUnion: unionResult
+  };
 }
 
 function buildPocketPolygons(holes, errors = [], debugState = null) {
@@ -476,44 +486,107 @@ function unionPocketPolygons(polygons) {
 }
 
 function normalizeUnionResultToRings(unionResult, outerPoints, errors, debugState = null) {
-  if (!Array.isArray(unionResult)) {
-    errors.push('Ошибка объединения внутренних карманов: некорректный формат результата union.');
-    return [];
-  }
-
   if (debugState) {
-    debugState.unionPolygons = unionResult.length;
+    debugState.unionPolygons = Array.isArray(unionResult) ? unionResult.length : 0;
   }
+  const regions = normalizeClipperResultToRegions(unionResult, {
+    outerBoundary: outerPoints,
+    errors,
+    invalidResultMessage: 'Ошибка объединения внутренних карманов: некорректный формат результата union.',
+    invalidOuterMessage: 'Объединённый внутренний карман после union вырожден или самопересекается.',
+    outsideMessage: 'Объединённый внутренний карман вышел за пределы внешнего контура.'
+  });
 
-  const mergedRings = [];
-  for (const polygon of unionResult) {
-    if (!Array.isArray(polygon) || polygon.length === 0) continue;
-    if (polygon.length > 1) {
-      errors.push('Слияние внутренних карманов сформировало острова внутри кармана, этот случай пока не поддерживается.');
-      continue;
-    }
-
-    const ring = fromClipperRing(polygon[0]);
-    const cleanedRing = cleanupUnionRing(ring, UNION_RING_EPSILON);
-    if (!cleanedRing) {
-      errors.push('Объединённый внутренний карман после union вырожден или самопересекается.');
-      continue;
-    }
-
-    const insideOuter = cleanedRing.slice(0, -1).every((point) => pointInPolygon(point, outerPoints));
-    if (!insideOuter) {
-      errors.push('Объединённый внутренний карман вышел за пределы внешнего контура.');
-      continue;
-    }
-
-    mergedRings.push(cleanedRing);
-  }
+  const mergedRings = regions.map((region) => ensureRingClosed(region.outer));
 
   if (debugState) {
     debugState.postCleanupRings = mergedRings.length;
   }
 
   return mergedRings;
+}
+
+function buildTopSolidRegions(outerPoints, pocketUnion, errors) {
+  const outerPolygon = [[toClipperRing(outerPoints)]];
+  let differenceResult = outerPolygon;
+
+  if (Array.isArray(pocketUnion) && pocketUnion.length > 0) {
+    try {
+      differenceResult = polygonClipping.difference(outerPolygon, pocketUnion);
+    } catch (e) {
+      errors.push(`Ошибка расчёта верхнего слоя (outer - pockets): ${e.message}`);
+      return [];
+    }
+  }
+
+  return normalizeClipperResultToRegions(differenceResult, {
+    outerBoundary: outerPoints,
+    errors,
+    invalidResultMessage: 'Ошибка расчёта верхнего слоя: некорректный формат результата difference.',
+    invalidOuterMessage: 'Регион верхнего слоя вырожден или самопересекается.',
+    invalidHoleMessage: 'Внутренний контур региона верхнего слоя вырожден или самопересекается.',
+    outsideMessage: 'Регион верхнего слоя вышел за пределы внешнего контура.'
+  });
+}
+
+function normalizeClipperResultToRegions(result, options = {}) {
+  const {
+    outerBoundary,
+    errors = [],
+    invalidResultMessage = 'Некорректный формат результата polygon-clipping.',
+    invalidOuterMessage = 'Внешний контур региона вырожден или самопересекается.',
+    invalidHoleMessage = 'Внутренний контур региона вырожден или самопересекается.',
+    outsideMessage = 'Контур региона вышел за пределы внешнего контура.'
+  } = options;
+
+  if (!Array.isArray(result)) {
+    errors.push(invalidResultMessage);
+    return [];
+  }
+
+  const regions = [];
+  for (const polygon of result) {
+    if (!Array.isArray(polygon) || polygon.length === 0) continue;
+
+    const outer = cleanupUnionRing(fromClipperRing(polygon[0]), UNION_RING_EPSILON);
+    if (!outer) {
+      errors.push(invalidOuterMessage);
+      continue;
+    }
+
+    if (outerBoundary && !ringInsideBoundary(outer, outerBoundary)) {
+      errors.push(outsideMessage);
+      continue;
+    }
+
+    const region = {
+      outer: ensureOrientation(stripClosingDuplicate(outer), true),
+      holes: []
+    };
+
+    for (let i = 1; i < polygon.length; i++) {
+      const hole = cleanupUnionRing(fromClipperRing(polygon[i]), UNION_RING_EPSILON);
+      if (!hole) {
+        errors.push(invalidHoleMessage);
+        continue;
+      }
+
+      if (!ringInsideBoundary(hole, ensureRingClosed(region.outer))) {
+        errors.push('Внутренний контур региона верхнего слоя вышел за пределы внешнего контура региона.');
+        continue;
+      }
+
+      region.holes.push(ensureOrientation(stripClosingDuplicate(hole), false));
+    }
+
+    regions.push(region);
+  }
+
+  return regions;
+}
+
+function ringInsideBoundary(ring, boundary) {
+  return ring.slice(0, -1).every((point) => pointInOrOnPolygon(point, boundary));
 }
 
 function preUnionNormalizeRing(points, eps, snapStep) {
@@ -661,6 +734,24 @@ function pointInPolygon(point, polygon) {
   return inside;
 }
 
+
+function pointInOrOnPolygon(point, polygon) {
+  if (pointInPolygon(point, polygon)) return true;
+  for (let i = 0; i < polygon.length - 1; i++) {
+    if (pointOnSegment(point, polygon[i], polygon[i + 1])) return true;
+  }
+  return false;
+}
+
+function pointOnSegment(point, a, b, eps = 1e-6) {
+  if (Math.abs(orient(a, b, point)) > eps) return false;
+  const minX = Math.min(a.x, b.x) - eps;
+  const maxX = Math.max(a.x, b.x) + eps;
+  const minY = Math.min(a.y, b.y) - eps;
+  const maxY = Math.max(a.y, b.y) + eps;
+  return point.x >= minX && point.x <= maxX && point.y >= minY && point.y <= maxY;
+}
+
 function isSelfIntersecting(points) {
   for (let i = 0; i < points.length - 1; i++) {
     for (let j = i + 1; j < points.length - 1; j++) {
@@ -743,7 +834,10 @@ module.exports = {
   parseSvgToContours,
   validateAndClassifyContours,
   mergeHoleContours,
+  computePocketUnion,
   buildPocketPolygons,
   unionPocketPolygons,
-  normalizeUnionResultToRings
+  normalizeUnionResultToRings,
+  buildTopSolidRegions,
+  normalizeClipperResultToRegions
 };

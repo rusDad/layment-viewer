@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node server.js",
     "start": "node server.js",
-    "test": "node test/overlap-union.test.js"
+    "test": "node test/overlap-union.test.js && node test/top-regions.test.js"
   },
   "dependencies": {
     "express": "^4.21.2",
