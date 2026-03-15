@@ -7,6 +7,17 @@ const ViewerMode = {
   DEBUG: 'debug'
 };
 
+const TOP_SKIN_THICKNESS_MM = 4;
+const TOP_LAYER_COLOR = 0x232826;
+const EVA_GREEN_COLOR = 0x6ea978;
+const MATERIAL_METALNESS = 0.01;
+const TOP_LAYER_ROUGHNESS = 0.9;
+const GREEN_LAYER_ROUGHNESS = 0.82;
+const PREVIEW_FIT_DISTANCE_FACTOR = 1.68;
+const DEBUG_FIT_DISTANCE_FACTOR = 1.6;
+const PREVIEW_CAMERA_HEIGHT_FACTOR = 0.95;
+const PREVIEW_CAMERA_DEPTH_FACTOR = 0.74;
+
 const root = document.getElementById('canvas-root');
 const errorsEl = document.getElementById('errors');
 const metaEl = document.getElementById('meta');
@@ -35,11 +46,23 @@ const mainDirectionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
 mainDirectionalLight.position.set(80, 120, 100);
 const fillLight = new THREE.DirectionalLight(0xffffff, 0.2);
 fillLight.position.set(-100, 80, -60);
+const rimLight = new THREE.DirectionalLight(0xffffff, 0.25);
+rimLight.position.set(-140, 140, 160);
+const shadowReceiver = new THREE.Mesh(
+  new THREE.PlaneGeometry(1, 1),
+  new THREE.ShadowMaterial({ opacity: 0.18 })
+);
+shadowReceiver.rotation.x = -Math.PI / 2;
+shadowReceiver.receiveShadow = true;
+shadowReceiver.visible = false;
 const axesHelper = new THREE.AxesHelper(40);
 
 scene.add(ambientLight);
 scene.add(mainDirectionalLight);
+scene.add(mainDirectionalLight.target);
 scene.add(fillLight);
+scene.add(rimLight);
+scene.add(shadowReceiver);
 
 configureSceneForMode(viewerMode);
 
@@ -113,23 +136,43 @@ function configureSceneForMode(mode) {
 function configureSceneForPreviewMode() {
   scene.background = new THREE.Color(0xf1f3f5);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1;
-  ambientLight.intensity = 0.95;
-  mainDirectionalLight.intensity = 0.7;
-  mainDirectionalLight.position.set(140, 160, 120);
-  fillLight.intensity = 0.35;
-  fillLight.position.set(-120, 90, -80);
+  renderer.toneMappingExposure = 1.03;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+  ambientLight.intensity = 0.52;
+  mainDirectionalLight.intensity = 0.95;
+  mainDirectionalLight.position.set(150, 190, 130);
+  mainDirectionalLight.castShadow = true;
+  mainDirectionalLight.shadow.mapSize.set(2048, 2048);
+  mainDirectionalLight.shadow.radius = 4;
+  mainDirectionalLight.shadow.bias = -0.0002;
+
+  fillLight.intensity = 0.3;
+  fillLight.position.set(-160, 100, -100);
+  fillLight.castShadow = false;
+
+  rimLight.intensity = 0.45;
+  rimLight.position.set(-120, 170, 210);
+  rimLight.castShadow = false;
+
+  shadowReceiver.visible = true;
   scene.remove(axesHelper);
 }
 
 function configureSceneForDebugMode() {
   scene.background = new THREE.Color(0x151515);
   renderer.toneMapping = THREE.NoToneMapping;
+  renderer.shadowMap.enabled = false;
   ambientLight.intensity = 0.5;
   mainDirectionalLight.intensity = 0.8;
   mainDirectionalLight.position.set(80, 120, 100);
+  mainDirectionalLight.castShadow = false;
   fillLight.intensity = 0.2;
   fillLight.position.set(-100, 80, -60);
+  rimLight.intensity = 0.25;
+  rimLight.position.set(-140, 140, 160);
+  shadowReceiver.visible = false;
   scene.add(axesHelper);
 }
 
@@ -324,56 +367,84 @@ function buildModel(geometry) {
   const shapeTop = contourToShape(geometry.outer, geometry.holes);
   const shapeBottom = contourToShape(geometry.outer, []);
 
-  const upper = new THREE.ExtrudeGeometry(shapeTop, {
-    depth: geometry.extrusion.pocketDepth,
-    bevelEnabled: false,
-    curveSegments: 16
+  const pocketDepth = Math.max(0, Math.min(geometry.extrusion.pocketDepth, geometry.extrusion.baseDepth));
+  const topSkinDepth = Math.min(TOP_SKIN_THICKNESS_MM, pocketDepth);
+  const greenPocketDepth = Math.max(pocketDepth - topSkinDepth, 0);
+  const baseDepth = Math.max(geometry.extrusion.baseDepth - pocketDepth, 0);
+  const hasTopLayer = topSkinDepth > 0.0001;
+  const hasGreenPocketLayer = greenPocketDepth > 0.0001;
+  const hasGreenBaseLayer = baseDepth > 0.0001;
+
+  const greenGeometries = [];
+
+  if (hasGreenPocketLayer) {
+    const midLayer = new THREE.ExtrudeGeometry(shapeTop, {
+      depth: greenPocketDepth,
+      bevelEnabled: false,
+      curveSegments: 16
+    });
+    midLayer.rotateX(Math.PI);
+    midLayer.translate(0, 0, -topSkinDepth);
+    greenGeometries.push(midLayer);
+  }
+
+  if (hasGreenBaseLayer) {
+    const lower = new THREE.ExtrudeGeometry(shapeBottom, {
+      depth: baseDepth,
+      bevelEnabled: false,
+      curveSegments: 16
+    });
+    lower.rotateX(Math.PI);
+    lower.translate(0, 0, -pocketDepth);
+    greenGeometries.push(lower);
+  }
+
+  const topLayer = hasTopLayer
+    ? new THREE.ExtrudeGeometry(shapeTop, {
+      depth: topSkinDepth,
+      bevelEnabled: false,
+      curveSegments: 16
+    })
+    : null;
+
+  if (topLayer) {
+    topLayer.rotateX(Math.PI);
+    topLayer.computeVertexNormals();
+  }
+
+  const mergedGreen = greenGeometries.length > 1 ? mergeGeometries(greenGeometries) : greenGeometries[0] || null;
+  if (mergedGreen) {
+    mergedGreen.computeVertexNormals();
+  }
+
+  const greenMaterial = new THREE.MeshStandardMaterial({
+    color: EVA_GREEN_COLOR,
+    metalness: MATERIAL_METALNESS,
+    roughness: GREEN_LAYER_ROUGHNESS
   });
-  upper.rotateX(Math.PI);
-
-  const lower = new THREE.ExtrudeGeometry(shapeBottom, {
-    depth: geometry.extrusion.baseDepth - geometry.extrusion.pocketDepth,
-    bevelEnabled: false,
-    curveSegments: 16
+  const topMaterial = new THREE.MeshStandardMaterial({
+    color: TOP_LAYER_COLOR,
+    metalness: MATERIAL_METALNESS,
+    roughness: TOP_LAYER_ROUGHNESS
   });
-  lower.rotateX(Math.PI);
-  lower.translate(0, 0, -geometry.extrusion.pocketDepth);
-
-  const merged = mergeGeometries([upper, lower]);
-  merged.computeVertexNormals();
-
-  const sideMaterial = new THREE.MeshStandardMaterial({
-    color: 0x5f8f67,
-    metalness: 0.02,
-    roughness: 0.78
-  });
-  const baseMesh = new THREE.Mesh(merged, sideMaterial);
-
-  const capGeometry = new THREE.ShapeGeometry(shapeTop, 16);
-  capGeometry.rotateX(Math.PI);
-  merged.computeBoundingBox();
-  capGeometry.computeBoundingBox();
-
-  const topSurfaceZ = merged.boundingBox.max.z;
-  const capPlaneZ = capGeometry.boundingBox.max.z;
-  const capOffset = Math.max(geometry.extrusion.baseDepth * 0.0002, 0.001);
-  capGeometry.translate(0, 0, topSurfaceZ - capPlaneZ + capOffset);
-  capGeometry.computeVertexNormals();
-  const capMaterial = new THREE.MeshStandardMaterial({
-    color: 0x171a18,
-    metalness: 0,
-    roughness: 0.92,
-    side: THREE.DoubleSide,
-    polygonOffset: true,
-    polygonOffsetFactor: -1,
-    polygonOffsetUnits: -1
-  });
-  const capMesh = new THREE.Mesh(capGeometry, capMaterial);
 
   modelGroup = new THREE.Group();
   modelGroup.rotation.x = -Math.PI / 2;
-  modelGroup.add(baseMesh);
-  modelGroup.add(capMesh);
+
+  if (mergedGreen) {
+    const greenMesh = new THREE.Mesh(mergedGreen, greenMaterial);
+    greenMesh.castShadow = isPreviewMode(viewerMode);
+    greenMesh.receiveShadow = isPreviewMode(viewerMode);
+    modelGroup.add(greenMesh);
+  }
+
+  if (topLayer) {
+    const topMesh = new THREE.Mesh(topLayer, topMaterial);
+    topMesh.castShadow = isPreviewMode(viewerMode);
+    topMesh.receiveShadow = isPreviewMode(viewerMode);
+    modelGroup.add(topMesh);
+  }
+
   scene.add(modelGroup);
 
   fitCamera(modelGroup);
@@ -416,9 +487,30 @@ function fitCamera(obj) {
   const center = box.getCenter(new THREE.Vector3());
 
   const maxDim = Math.max(size.x, size.y, size.z);
-  const dist = maxDim * (isPreviewMode(viewerMode) ? 2.1 : 1.6);
+  const preview = isPreviewMode(viewerMode);
+  const dist = maxDim * (preview ? PREVIEW_FIT_DISTANCE_FACTOR : DEBUG_FIT_DISTANCE_FACTOR);
 
-  camera.position.set(center.x + dist, center.y + dist * 0.9, center.z + dist * 0.6);
+  if (preview) {
+    const shadowSize = Math.max(size.x, size.z) * 1.8;
+    shadowReceiver.scale.set(shadowSize, shadowSize, 1);
+    shadowReceiver.position.set(center.x, box.min.y - 0.5, center.z);
+
+    const shadowCamExtent = Math.max(size.x, size.y, size.z) * 0.9;
+    mainDirectionalLight.shadow.camera.left = -shadowCamExtent;
+    mainDirectionalLight.shadow.camera.right = shadowCamExtent;
+    mainDirectionalLight.shadow.camera.top = shadowCamExtent;
+    mainDirectionalLight.shadow.camera.bottom = -shadowCamExtent;
+    mainDirectionalLight.shadow.camera.near = 1;
+    mainDirectionalLight.shadow.camera.far = Math.max(1500, maxDim * 10);
+    mainDirectionalLight.shadow.camera.updateProjectionMatrix();
+    mainDirectionalLight.target.position.copy(center);
+  }
+
+  camera.position.set(
+    center.x + dist,
+    center.y + dist * (preview ? PREVIEW_CAMERA_HEIGHT_FACTOR : 0.9),
+    center.z + dist * (preview ? PREVIEW_CAMERA_DEPTH_FACTOR : 0.6)
+  );
   camera.near = Math.max(0.1, maxDim / 1000);
   camera.far = Math.max(5000, maxDim * 20);
   camera.updateProjectionMatrix();
