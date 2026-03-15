@@ -457,12 +457,84 @@ function contourToShape(outer, holes) {
      p.y - bounds.maxY
   );
 
-  const shape = new THREE.Shape(outer.map(toLocal));
-  holes.forEach((h) => {
-    const path = new THREE.Path(h.map(toLocal));
-    shape.holes.push(path);
+  const shape = buildClosedShape(outer, toLocal);
+  holes.forEach((ring) => {
+    const path = buildClosedPath(ring, toLocal);
+    if (path) {
+      shape.holes.push(path);
+    }
   });
+
   return shape;
+}
+
+function buildClosedShape(points, toLocal) {
+  const normalizedPoints = getValidRingPoints(points);
+  if (!normalizedPoints) {
+    throw new Error('Некорректный внешний контур: минимум 3 уникальные точки.');
+  }
+
+  const shape = new THREE.Shape();
+  appendClosedRing(shape, normalizedPoints, toLocal);
+  shape.autoClose = true;
+  return shape;
+}
+
+function buildClosedPath(points, toLocal) {
+  const normalizedPoints = getValidRingPoints(points);
+  if (!normalizedPoints) {
+    return null;
+  }
+
+  const path = new THREE.Path();
+  appendClosedRing(path, normalizedPoints, toLocal);
+  path.autoClose = true;
+  return path;
+}
+
+function appendClosedRing(target, points, toLocal) {
+  const first = toLocal(points[0]);
+  target.moveTo(first.x, first.y);
+
+  for (let i = 1; i < points.length; i += 1) {
+    const local = toLocal(points[i]);
+    target.lineTo(local.x, local.y);
+  }
+
+  target.closePath();
+}
+
+function getValidRingPoints(points) {
+  const normalizedPoints = stripClosingDuplicate(points);
+  if (countUniquePoints(normalizedPoints) < 3) {
+    return null;
+  }
+
+  return normalizedPoints;
+}
+
+function stripClosingDuplicate(points) {
+  if (!Array.isArray(points) || points.length < 2) {
+    return Array.isArray(points) ? points.slice() : [];
+  }
+
+  const normalizedPoints = points.slice();
+  const first = normalizedPoints[0];
+  const last = normalizedPoints[normalizedPoints.length - 1];
+  if (isSamePoint(first, last)) {
+    normalizedPoints.pop();
+  }
+
+  return normalizedPoints;
+}
+
+function countUniquePoints(points) {
+  const unique = new Set(points.map((point) => `${point.x}:${point.y}`));
+  return unique.size;
+}
+
+function isSamePoint(a, b) {
+  return a.x === b.x && a.y === b.y;
 }
 
 function calcContourBounds(points) {
