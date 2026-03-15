@@ -50,29 +50,137 @@ animate();
 document.getElementById('upload').addEventListener('click', uploadSvg);
 
 async function uploadSvg() {
-  errorsEl.textContent = '';
-  metaEl.textContent = '';
-
   const input = document.getElementById('file');
   if (!input.files?.length) {
     errorsEl.textContent = 'Выберите SVG файл.';
     return;
   }
 
+  await uploadSvgFile(input.files[0], { source: 'manual upload' });
+}
+
+function clearStatus() {
+  errorsEl.textContent = '';
+  metaEl.textContent = '';
+}
+
+async function uploadSvgFile(file, options = {}) {
+  const source = options.source ?? 'file';
+  clearStatus();
+
   const fd = new FormData();
-  fd.append('file', input.files[0]);
+  fd.append('file', file);
 
-  const res = await fetch('/svg3d-api/upload-svg', { method: 'POST', body: fd });
-  const json = await res.json();
-
-  if (!json.ok) {
-    errorsEl.textContent = json.errors.join('\n');
+  let json;
+  try {
+    const res = await fetch('/svg3d-api/upload-svg', { method: 'POST', body: fd });
+    json = await res.json();
+  } catch (err) {
+    errorsEl.textContent = `Ошибка загрузки SVG: ${err instanceof Error ? err.message : String(err)}`;
     return;
   }
 
-  metaEl.textContent = `bbox: ${JSON.stringify(json.meta.bbox)}\nouterArea: ${json.meta.outerArea.toFixed(2)}\nholes: ${json.meta.holesCount}`;
+  renderUploadResponse(json, { source });
+}
+
+async function uploadSvgText(svgText, options = {}) {
+  const trimmed = typeof svgText === 'string' ? svgText.trim() : '';
+  if (!trimmed) {
+    errorsEl.textContent = 'SVG payload пустой или некорректный.';
+    return;
+  }
+
+  const file = new File([trimmed], options.fileName ?? 'payload.svg', { type: 'image/svg+xml' });
+  await uploadSvgFile(file, options);
+}
+
+function renderUploadResponse(json, options = {}) {
+  const source = options.source ?? 'file';
+
+  if (!json?.ok) {
+    const errors = Array.isArray(json?.errors) ? json.errors : ['Не удалось обработать SVG.'];
+    errorsEl.textContent = errors.join('\n');
+    return;
+  }
+
+  const sourceLabel = source ? `source: ${source}\n` : '';
+  metaEl.textContent = `${sourceLabel}bbox: ${JSON.stringify(json.meta.bbox)}\nouterArea: ${json.meta.outerArea.toFixed(2)}\nholes: ${json.meta.holesCount}`;
   buildModel(json.geometry);
 }
+
+function parseQuery() {
+  const params = new URLSearchParams(window.location.search);
+  return { payloadKey: params.get('payloadKey')?.trim() || '' };
+}
+
+function extractSvgFromPayload(payloadRaw) {
+  if (typeof payloadRaw !== 'string' || !payloadRaw.trim()) {
+    return '';
+  }
+
+  const trimmed = payloadRaw.trim();
+  if (trimmed.startsWith('<svg')) {
+    return trimmed;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (typeof parsed === 'string') {
+      return parsed;
+    }
+
+    if (parsed && typeof parsed === 'object') {
+      const candidates = [
+        parsed.svg,
+        parsed.svgText,
+        parsed.content,
+        parsed.payload?.svg,
+        parsed.payload?.svgText
+      ];
+      const svg = candidates.find((value) => typeof value === 'string' && value.trim());
+      return svg ? svg.trim() : '';
+    }
+  } catch {
+    return '';
+  }
+
+  return '';
+}
+
+function loadSvgPayloadFromStorage(payloadKey) {
+  const raw = localStorage.getItem(payloadKey);
+  if (!raw) {
+    throw new Error(`Payload with key "${payloadKey}" не найден в localStorage.`);
+  }
+
+  const svgText = extractSvgFromPayload(raw);
+  if (!svgText) {
+    throw new Error(`Payload "${payloadKey}" не содержит валидный SVG.`);
+  }
+
+  return svgText;
+}
+
+async function initAutoloadFromPayloadKey() {
+  const { payloadKey } = parseQuery();
+  if (!payloadKey) {
+    return;
+  }
+
+  let svgText = '';
+  try {
+    svgText = loadSvgPayloadFromStorage(payloadKey);
+  } catch (err) {
+    clearStatus();
+    errorsEl.textContent = err instanceof Error ? err.message : String(err);
+    localStorage.removeItem(payloadKey);
+    return;
+  }
+
+  await uploadSvgText(svgText, { source: `external payload (${payloadKey})`, fileName: `${payloadKey}.svg` });
+  localStorage.removeItem(payloadKey);
+}
+initAutoloadFromPayloadKey();
 
 function buildModel(geometry) {
   if (modelGroup) {

@@ -96,6 +96,29 @@ npm run dev
 ```
 
 
+
+## Autoload из localStorage (designer → viewer)
+
+Viewer поддерживает автозагрузку SVG через query-параметр `payloadKey`:
+
+1. Вкладка/скрипт designer кладёт payload в `localStorage`:
+
+```js
+localStorage.setItem('demo-payload', JSON.stringify({ svg: '<svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg"><path d="M0 0 L120 0 L120 80 L0 80 Z"/></svg>' }));
+```
+
+2. Открывается viewer:
+
+```text
+http://localhost:3000/svg3d/?payloadKey=demo-payload
+```
+
+3. Viewer автоматически:
+   - читает payload из `localStorage`;
+   - извлекает SVG (`svg` / `svgText` / строковый payload);
+   - отправляет его на существующий `POST /svg3d-api/upload-svg` как `multipart/form-data` (поле `file`);
+   - строит 3D-модель и удаляет использованный payload из `localStorage`.
+
 ## How to verify transforms
 
 1. Запустить сервер:
