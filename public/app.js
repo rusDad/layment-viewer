@@ -2,31 +2,46 @@ import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
 import { mergeGeometries } from 'https://unpkg.com/three@0.160.0/examples/jsm/utils/BufferGeometryUtils.js';
 
+const ViewerMode = {
+  PREVIEW: 'preview',
+  DEBUG: 'debug'
+};
+
 const root = document.getElementById('canvas-root');
 const errorsEl = document.getElementById('errors');
 const metaEl = document.getElementById('meta');
+const previewStateEl = document.getElementById('preview-state');
+const fileInput = document.getElementById('file');
+const uploadButton = document.getElementById('upload');
+
+const query = parseQuery();
+const viewerMode = getViewerMode(query);
+applyModeUI(viewerMode);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x151515);
 
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 20000);
 camera.position.set(120, 120, 120);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(window.devicePixelRatio);
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 root.appendChild(renderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 
-scene.add(new THREE.AxesHelper(40));
-scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-dir.position.set(80, 120, 100);
-scene.add(dir);
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+const mainDirectionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+mainDirectionalLight.position.set(80, 120, 100);
+const fillLight = new THREE.DirectionalLight(0xffffff, 0.2);
+fillLight.position.set(-100, 80, -60);
+const axesHelper = new THREE.AxesHelper(40);
 
-const grid = new THREE.GridHelper(300, 30, 0x444444, 0x2b2b2b);
-//scene.add(grid);
+scene.add(ambientLight);
+scene.add(mainDirectionalLight);
+scene.add(fillLight);
+
+configureSceneForMode(viewerMode);
 
 let modelGroup = null;
 
@@ -47,26 +62,129 @@ function animate() {
 }
 animate();
 
-document.getElementById('upload').addEventListener('click', uploadSvg);
+uploadButton.addEventListener('click', uploadSvg);
+
+if (isPreviewMode(viewerMode)) {
+  initAutoloadFromPayloadKey(query.payloadKey);
+}
 
 async function uploadSvg() {
-  const input = document.getElementById('file');
-  if (!input.files?.length) {
-    errorsEl.textContent = 'Выберите SVG файл.';
+  if (!fileInput.files?.length) {
+    setErrorState('Выберите SVG файл.');
     return;
   }
 
-  await uploadSvgFile(input.files[0], { source: 'manual upload' });
+  await uploadSvgFile(fileInput.files[0], { source: 'manual upload' });
 }
 
-function clearStatus() {
+function getViewerMode(parsedQuery) {
+  const isForcedDebug = parsedQuery.debug === '1';
+  if (isForcedDebug) {
+    return ViewerMode.DEBUG;
+  }
+
+  return parsedQuery.payloadKey ? ViewerMode.PREVIEW : ViewerMode.DEBUG;
+}
+
+function isPreviewMode(mode) {
+  return mode === ViewerMode.PREVIEW;
+}
+
+function applyModeUI(mode) {
+  document.body.classList.remove('viewer-mode-preview', 'viewer-mode-debug');
+  document.body.classList.add(`viewer-mode-${mode}`);
+
+  if (isPreviewMode(mode)) {
+    setPreviewState('Готовим 3D предпросмотр...');
+  } else {
+    clearDebugState();
+  }
+}
+
+function configureSceneForMode(mode) {
+  if (isPreviewMode(mode)) {
+    configureSceneForPreviewMode();
+    return;
+  }
+
+  configureSceneForDebugMode();
+}
+
+function configureSceneForPreviewMode() {
+  scene.background = new THREE.Color(0xf1f3f5);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1;
+  ambientLight.intensity = 0.95;
+  mainDirectionalLight.intensity = 0.7;
+  mainDirectionalLight.position.set(140, 160, 120);
+  fillLight.intensity = 0.35;
+  fillLight.position.set(-120, 90, -80);
+  scene.remove(axesHelper);
+}
+
+function configureSceneForDebugMode() {
+  scene.background = new THREE.Color(0x151515);
+  renderer.toneMapping = THREE.NoToneMapping;
+  ambientLight.intensity = 0.5;
+  mainDirectionalLight.intensity = 0.8;
+  mainDirectionalLight.position.set(80, 120, 100);
+  fillLight.intensity = 0.2;
+  fillLight.position.set(-100, 80, -60);
+  scene.add(axesHelper);
+}
+
+function clearDebugState() {
   errorsEl.textContent = '';
   metaEl.textContent = '';
 }
 
+function setPreviewState(message) {
+  if (!previewStateEl) {
+    return;
+  }
+
+  if (!message) {
+    previewStateEl.textContent = '';
+    previewStateEl.classList.remove('is-visible');
+    return;
+  }
+
+  previewStateEl.textContent = message;
+  previewStateEl.classList.add('is-visible');
+}
+
+function setLoadingState(message = 'Готовим 3D предпросмотр...') {
+  if (isPreviewMode(viewerMode)) {
+    setPreviewState(message);
+    return;
+  }
+
+  clearDebugState();
+  errorsEl.textContent = 'Загрузка...';
+}
+
+function setErrorState(message) {
+  if (isPreviewMode(viewerMode)) {
+    setPreviewState(message);
+    return;
+  }
+
+  errorsEl.textContent = message;
+}
+
+function setSuccessState(metaText) {
+  if (isPreviewMode(viewerMode)) {
+    setPreviewState('');
+    return;
+  }
+
+  errorsEl.textContent = '';
+  metaEl.textContent = metaText;
+}
+
 async function uploadSvgFile(file, options = {}) {
   const source = options.source ?? 'file';
-  clearStatus();
+  setLoadingState(isPreviewMode(viewerMode) ? 'Готовим 3D предпросмотр...' : 'Загрузка...');
 
   const fd = new FormData();
   fd.append('file', file);
@@ -76,7 +194,7 @@ async function uploadSvgFile(file, options = {}) {
     const res = await fetch('/svg3d-api/upload-svg', { method: 'POST', body: fd });
     json = await res.json();
   } catch (err) {
-    errorsEl.textContent = `Ошибка загрузки SVG: ${err instanceof Error ? err.message : String(err)}`;
+    setErrorState(`Ошибка загрузки SVG: ${err instanceof Error ? err.message : String(err)}`);
     return;
   }
 
@@ -86,7 +204,7 @@ async function uploadSvgFile(file, options = {}) {
 async function uploadSvgText(svgText, options = {}) {
   const trimmed = typeof svgText === 'string' ? svgText.trim() : '';
   if (!trimmed) {
-    errorsEl.textContent = 'SVG payload пустой или некорректный.';
+    setErrorState(isPreviewMode(viewerMode) ? 'SVG для предпросмотра не передан.' : 'SVG payload пустой или некорректный.');
     return;
   }
 
@@ -98,19 +216,27 @@ function renderUploadResponse(json, options = {}) {
   const source = options.source ?? 'file';
 
   if (!json?.ok) {
-    const errors = Array.isArray(json?.errors) ? json.errors : ['Не удалось обработать SVG.'];
-    errorsEl.textContent = errors.join('\n');
+    if (isPreviewMode(viewerMode)) {
+      setErrorState('Не удалось построить 3D предпросмотр.');
+    } else {
+      const errors = Array.isArray(json?.errors) ? json.errors : ['Не удалось обработать SVG.'];
+      setErrorState(errors.join('\n'));
+    }
     return;
   }
 
   const sourceLabel = source ? `source: ${source}\n` : '';
-  metaEl.textContent = `${sourceLabel}bbox: ${JSON.stringify(json.meta.bbox)}\nouterArea: ${json.meta.outerArea.toFixed(2)}\nholes: ${json.meta.holesCount}`;
+  const metaText = `${sourceLabel}bbox: ${JSON.stringify(json.meta.bbox)}\nouterArea: ${json.meta.outerArea.toFixed(2)}\nholes: ${json.meta.holesCount}`;
+  setSuccessState(metaText);
   buildModel(json.geometry);
 }
 
 function parseQuery() {
   const params = new URLSearchParams(window.location.search);
-  return { payloadKey: params.get('payloadKey')?.trim() || '' };
+  return {
+    payloadKey: params.get('payloadKey')?.trim() || '',
+    debug: params.get('debug')?.trim() || ''
+  };
 }
 
 function extractSvgFromPayload(payloadRaw) {
@@ -150,20 +276,20 @@ function extractSvgFromPayload(payloadRaw) {
 function loadSvgPayloadFromStorage(payloadKey) {
   const raw = localStorage.getItem(payloadKey);
   if (!raw) {
-    throw new Error(`Payload with key "${payloadKey}" не найден в localStorage.`);
+    throw new Error('SVG для предпросмотра не передан.');
   }
 
   const svgText = extractSvgFromPayload(raw);
   if (!svgText) {
-    throw new Error(`Payload "${payloadKey}" не содержит валидный SVG.`);
+    throw new Error('SVG payload повреждён или некорректен.');
   }
 
   return svgText;
 }
 
-async function initAutoloadFromPayloadKey() {
-  const { payloadKey } = parseQuery();
+async function initAutoloadFromPayloadKey(payloadKey) {
   if (!payloadKey) {
+    setErrorState('SVG для предпросмотра не передан.');
     return;
   }
 
@@ -171,8 +297,7 @@ async function initAutoloadFromPayloadKey() {
   try {
     svgText = loadSvgPayloadFromStorage(payloadKey);
   } catch (err) {
-    clearStatus();
-    errorsEl.textContent = err instanceof Error ? err.message : String(err);
+    setErrorState(err instanceof Error ? err.message : 'Не удалось построить 3D предпросмотр.');
     localStorage.removeItem(payloadKey);
     return;
   }
@@ -180,7 +305,6 @@ async function initAutoloadFromPayloadKey() {
   await uploadSvgText(svgText, { source: `external payload (${payloadKey})`, fileName: `${payloadKey}.svg` });
   localStorage.removeItem(payloadKey);
 }
-initAutoloadFromPayloadKey();
 
 function buildModel(geometry) {
   if (modelGroup) {
@@ -218,8 +342,12 @@ function buildModel(geometry) {
   const merged = mergeGeometries([upper, lower]);
   merged.computeVertexNormals();
 
-  const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x5f8f67, metalness: 0.05, roughness: 0.65 });
-  const baseMesh = new THREE.Mesh(merged, baseMaterial);
+  const sideMaterial = new THREE.MeshStandardMaterial({
+    color: 0x5f8f67,
+    metalness: 0.02,
+    roughness: 0.78
+  });
+  const baseMesh = new THREE.Mesh(merged, sideMaterial);
 
   const capGeometry = new THREE.ShapeGeometry(shapeTop, 16);
   capGeometry.rotateX(Math.PI);
@@ -232,9 +360,9 @@ function buildModel(geometry) {
   capGeometry.translate(0, 0, topSurfaceZ - capPlaneZ + capOffset);
   capGeometry.computeVertexNormals();
   const capMaterial = new THREE.MeshStandardMaterial({
-    color: 0x9a9a9a,
-    metalness: 0.05,
-    roughness: 0.75,
+    color: 0x171a18,
+    metalness: 0,
+    roughness: 0.92,
     side: THREE.DoubleSide,
     polygonOffset: true,
     polygonOffsetFactor: -1,
@@ -288,9 +416,9 @@ function fitCamera(obj) {
   const center = box.getCenter(new THREE.Vector3());
 
   const maxDim = Math.max(size.x, size.y, size.z);
-  const dist = maxDim * 1.6;
+  const dist = maxDim * (isPreviewMode(viewerMode) ? 2.1 : 1.6);
 
-  camera.position.set(center.x + dist, center.y + dist, center.z + dist);
+  camera.position.set(center.x + dist, center.y + dist * 0.9, center.z + dist * 0.6);
   camera.near = Math.max(0.1, maxDim / 1000);
   camera.far = Math.max(5000, maxDim * 20);
   camera.updateProjectionMatrix();
