@@ -10,6 +10,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 const BASE_DEPTH = 35;
 const POCKET_DEPTH = 20;
 const CURVE_STEP_MM = 0.5;
+const UNION_RING_EPSILON = 1e-5;
 
 app.use(express.static('public'));
 
@@ -454,18 +455,75 @@ function normalizeUnionResultToRings(unionResult, outerPoints, errors) {
     }
 
     const ring = fromClipperRing(polygon[0]);
-    if (ring.length < 4) continue;
+    const cleanedRing = cleanupUnionRing(ring, UNION_RING_EPSILON);
+    if (!cleanedRing) {
+      errors.push('Объединённый внутренний карман после union вырожден или самопересекается.');
+      continue;
+    }
 
-    const insideOuter = ring.slice(0, -1).every((point) => pointInPolygon(point, outerPoints));
+    const insideOuter = cleanedRing.slice(0, -1).every((point) => pointInPolygon(point, outerPoints));
     if (!insideOuter) {
       errors.push('Объединённый внутренний карман вышел за пределы внешнего контура.');
       continue;
     }
 
-    mergedRings.push(ring);
+    mergedRings.push(cleanedRing);
   }
 
   return mergedRings;
+}
+
+function stripClosingDuplicate(points) {
+  if (!points.length) return [];
+  const out = [...points];
+  if (out.length > 1 && samePoint(out[0], out[out.length - 1])) {
+    out.pop();
+  }
+  return out;
+}
+
+function removeShortEdges(points, eps) {
+  if (!points.length) return [];
+  const out = [points[0]];
+  for (let i = 1; i < points.length; i++) {
+    if (dist(points[i], out[out.length - 1]) > eps) {
+      out.push(points[i]);
+    }
+  }
+  return out;
+}
+
+function removeCollinearPoints(points, eps) {
+  if (points.length < 3) return points;
+  const out = [];
+  for (let i = 0; i < points.length; i++) {
+    const prev = points[(i - 1 + points.length) % points.length];
+    const current = points[i];
+    const next = points[(i + 1) % points.length];
+
+    const cross = Math.abs(orient(prev, current, next));
+    const scale = Math.max(dist(prev, current) * dist(current, next), 1);
+    if (cross > eps * scale) {
+      out.push(current);
+    }
+  }
+  return out;
+}
+
+function cleanupUnionRing(points, eps) {
+  let ring = stripClosingDuplicate(points);
+  ring = dedupeSequential(ring);
+  ring = removeShortEdges(ring, eps);
+  ring = dedupeSequential(ring);
+  ring = removeCollinearPoints(ring, eps);
+  ring = dedupeSequential(ring);
+  ring = ensureRingClosed(ring);
+
+  if (ring.length < 4) return null;
+  if (Math.abs(polygonArea(ring)) <= eps * eps) return null;
+  if (isSelfIntersecting(ring)) return null;
+
+  return ring;
 }
 
 function ensureRingClosed(points) {
