@@ -5,12 +5,14 @@
   "main": "server.js",
   "scripts": {
     "dev": "node server.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node test/overlap-union.test.js"
   },
   "dependencies": {
     "express": "^4.21.2",
     "fast-xml-parser": "^4.5.1",
     "multer": "^1.4.5-lts.1",
-    "svg-arc-to-cubic-bezier": "^3.2.0"
+    "svg-arc-to-cubic-bezier": "^3.2.0",
+    "polygon-clipping": "^0.15.7"
   }
 }

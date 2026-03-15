@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const { XMLParser } = require('fast-xml-parser');
 const arcToCubic = require('svg-arc-to-cubic-bezier');
+const polygonClipping = require('polygon-clipping');
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -57,9 +58,11 @@ app.post('/svg3d-api/upload-svg', upload.single('file'), (req, res) => {
   }
 });
 
-app.listen(3000, () => {
-  console.log('Server on http://localhost:3000');
-});
+if (require.main === module) {
+  app.listen(3000, () => {
+    console.log('Server on http://localhost:3000');
+  });
+}
 
 function parseSvgToContours(svgText, errors) {
   const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
@@ -391,9 +394,10 @@ function validateAndClassifyContours(rawContours, errors) {
     }
   }
 
+  const mergedHoles = mergeHoleContours(holes, outer.points, errors);
   const bbox = calcBBox(outer.points);
   const outerPoints = ensureOrientation(outer.points.slice(0, -1), true);
-  const holePoints = holes.map((h) => ensureOrientation(h.slice(0, -1), false));
+  const holePoints = mergedHoles.map((h) => ensureOrientation(h.slice(0, -1), false));
 
   return {
     outer: outerPoints,
@@ -401,6 +405,85 @@ function validateAndClassifyContours(rawContours, errors) {
     bbox,
     outerArea: outer.absArea
   };
+}
+
+function mergeHoleContours(holes, outerPoints, errors) {
+  if (holes.length <= 1) {
+    return holes.map((hole) => ensureRingClosed(hole));
+  }
+
+  const polygons = buildPocketPolygons(holes);
+  let unionResult;
+
+  try {
+    unionResult = unionPocketPolygons(polygons);
+  } catch (e) {
+    errors.push(`Ошибка объединения внутренних карманов: ${e.message}`);
+    return [];
+  }
+
+  const merged = normalizeUnionResultToRings(unionResult, outerPoints, errors);
+  return merged.map((ring) => ensureRingClosed(ring));
+}
+
+function buildPocketPolygons(holes) {
+  return holes.map((ring) => [toClipperRing(ring)]);
+}
+
+function unionPocketPolygons(polygons) {
+  if (!polygons.length) return [];
+  let result = polygons[0];
+  for (let i = 1; i < polygons.length; i++) {
+    result = polygonClipping.union(result, polygons[i]);
+  }
+  return result;
+}
+
+function normalizeUnionResultToRings(unionResult, outerPoints, errors) {
+  if (!Array.isArray(unionResult)) {
+    errors.push('Ошибка объединения внутренних карманов: некорректный формат результата union.');
+    return [];
+  }
+
+  const mergedRings = [];
+  for (const polygon of unionResult) {
+    if (!Array.isArray(polygon) || polygon.length === 0) continue;
+    if (polygon.length > 1) {
+      errors.push('Слияние внутренних карманов сформировало острова внутри кармана, этот случай пока не поддерживается.');
+      continue;
+    }
+
+    const ring = fromClipperRing(polygon[0]);
+    if (ring.length < 4) continue;
+
+    const insideOuter = ring.slice(0, -1).every((point) => pointInPolygon(point, outerPoints));
+    if (!insideOuter) {
+      errors.push('Объединённый внутренний карман вышел за пределы внешнего контура.');
+      continue;
+    }
+
+    mergedRings.push(ring);
+  }
+
+  return mergedRings;
+}
+
+function ensureRingClosed(points) {
+  if (!points.length) return points;
+  const deduped = dedupeSequential(points);
+  if (!samePoint(deduped[0], deduped[deduped.length - 1])) {
+    deduped.push({ ...deduped[0] });
+  }
+  return deduped;
+}
+
+function toClipperRing(points) {
+  return ensureRingClosed(points).map((point) => [point.x, point.y]);
+}
+
+function fromClipperRing(ring) {
+  const points = (ring || []).map((p) => ({ x: p[0], y: p[1] }));
+  return ensureRingClosed(points);
 }
 
 function ensureOrientation(points, ccw) {
@@ -514,3 +597,13 @@ function num(v, fallback) {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
 }
+
+module.exports = {
+  app,
+  parseSvgToContours,
+  validateAndClassifyContours,
+  mergeHoleContours,
+  buildPocketPolygons,
+  unionPocketPolygons,
+  normalizeUnionResultToRings
+};
