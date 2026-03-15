@@ -364,7 +364,7 @@ function buildModel(geometry) {
     });
   }
 
-  const shapeTop = contourToShape(geometry.outer, geometry.holes);
+  const topRegions = getTopRegions(geometry);
   const shapeBottom = contourToShape(geometry.outer, []);
 
   const pocketDepth = Math.max(0, Math.min(geometry.extrusion.pocketDepth, geometry.extrusion.baseDepth));
@@ -378,14 +378,25 @@ function buildModel(geometry) {
   const greenGeometries = [];
 
   if (hasGreenPocketLayer) {
-    const midLayer = new THREE.ExtrudeGeometry(shapeTop, {
-      depth: greenPocketDepth,
-      bevelEnabled: false,
-      curveSegments: 16
+    const greenPocketGeometries = topRegions.map((region) => {
+      const topShape = contourToShape(region.outer, region.holes || []);
+      const geom = new THREE.ExtrudeGeometry(topShape, {
+        depth: greenPocketDepth,
+        bevelEnabled: false,
+        curveSegments: 16
+      });
+      geom.rotateX(Math.PI);
+      geom.translate(0, 0, -topSkinDepth);
+      return geom;
     });
-    midLayer.rotateX(Math.PI);
-    midLayer.translate(0, 0, -topSkinDepth);
-    greenGeometries.push(midLayer);
+
+    const mergedPocket = greenPocketGeometries.length > 1
+      ? mergeGeometries(greenPocketGeometries)
+      : greenPocketGeometries[0] || null;
+
+    if (mergedPocket) {
+      greenGeometries.push(mergedPocket);
+    }
   }
 
   if (hasGreenBaseLayer) {
@@ -399,16 +410,25 @@ function buildModel(geometry) {
     greenGeometries.push(lower);
   }
 
-  const topLayer = hasTopLayer
-    ? new THREE.ExtrudeGeometry(shapeTop, {
-      depth: topSkinDepth,
-      bevelEnabled: false,
-      curveSegments: 16
+  const topLayerGeometries = hasTopLayer
+    ? topRegions.map((region) => {
+      const topShape = contourToShape(region.outer, region.holes || []);
+      const geom = new THREE.ExtrudeGeometry(topShape, {
+        depth: topSkinDepth,
+        bevelEnabled: false,
+        curveSegments: 16
+      });
+      geom.rotateX(Math.PI);
+      geom.computeVertexNormals();
+      return geom;
     })
-    : null;
+    : [];
+
+  const topLayer = topLayerGeometries.length > 1
+    ? mergeGeometries(topLayerGeometries)
+    : topLayerGeometries[0] || null;
 
   if (topLayer) {
-    topLayer.rotateX(Math.PI);
     topLayer.computeVertexNormals();
   }
 
@@ -448,6 +468,15 @@ function buildModel(geometry) {
   scene.add(modelGroup);
 
   fitCamera(modelGroup);
+}
+
+
+function getTopRegions(geometry) {
+  if (Array.isArray(geometry.topRegions) && geometry.topRegions.length > 0) {
+    return geometry.topRegions;
+  }
+
+  return [{ outer: geometry.outer, holes: geometry.holes || [] }];
 }
 
 function contourToShape(outer, holes) {

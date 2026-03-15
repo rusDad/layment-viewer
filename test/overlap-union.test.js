@@ -24,6 +24,9 @@ fixtures.forEach((fixtureName) => {
   assert.deepStrictEqual(validationErrors, [], `${fixtureName}: validation errors: ${validationErrors.join('; ')}`);
 
   assert.ok(Array.isArray(geometry.holes), `${fixtureName}: holes must be an array`);
+
+  assert.ok(Array.isArray(geometry.topRegions), `${fixtureName}: topRegions must be an array`);
+  assert.ok(geometry.topRegions.length >= 1, `${fixtureName}: topRegions must contain at least one region`);
   assert.strictEqual(geometry.holes.length, 1, `${fixtureName}: overlap pockets must be merged into one hole`);
 
   const outer = closeRing(geometry.outer);
