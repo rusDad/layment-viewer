@@ -97,6 +97,13 @@ npm run dev
 
 
 
+
+## Режимы viewer
+
+- `http://localhost:3000/svg3d/` — **debug mode** (ручной upload SVG + техническая мета-информация).
+- `http://localhost:3000/svg3d/?payloadKey=...` — **preview mode** (чистый customer-facing 3D preview без debug-панели).
+- `debug=1` можно использовать для принудительного debug mode даже при наличии `payloadKey`.
+
 ## Autoload из localStorage (designer → viewer)
 
 Viewer поддерживает автозагрузку SVG через query-параметр `payloadKey`:
