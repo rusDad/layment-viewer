@@ -383,7 +383,7 @@ function contourToShape(outer, holes) {
   const bounds = calcContourBounds(outer);
   const toLocal = (p) => new THREE.Vector2(
     p.x - bounds.minX,
-    bounds.maxY - p.y
+     p.y - bounds.maxY
   );
 
   const shape = new THREE.Shape(outer.map(toLocal));
