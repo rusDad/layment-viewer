@@ -244,7 +244,10 @@ async function uploadSvgFile(file, options = {}) {
     return;
   }
 
-  renderUploadResponse(json, { source });
+   renderUploadResponse(json, {
+   ...options,
+   source
+   });
 }
 
 async function uploadSvgText(svgText, options = {}) {
