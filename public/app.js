@@ -10,6 +10,7 @@ const ViewerMode = {
 const TOP_SKIN_THICKNESS_MM = 4;
 const TOP_LAYER_COLOR = 0x232826;
 const EVA_GREEN_COLOR = 0x6ea978;
+const EVA_BLUE_COLOR = 0x5f7892;
 const MATERIAL_METALNESS = 0.01;
 const TOP_LAYER_ROUGHNESS = 0.9;
 const GREEN_LAYER_ROUGHNESS = 0.82;
@@ -17,6 +18,8 @@ const PREVIEW_FIT_DISTANCE_FACTOR = 1.68;
 const DEBUG_FIT_DISTANCE_FACTOR = 1.6;
 const PREVIEW_CAMERA_HEIGHT_FACTOR = 0.95;
 const PREVIEW_CAMERA_DEPTH_FACTOR = 0.74;
+const DEFAULT_BASE_MATERIAL_COLOR = 'green';
+const DEFAULT_LAYMENT_THICKNESS_MM = 35;
 
 const root = document.getElementById('canvas-root');
 const errorsEl = document.getElementById('errors');
@@ -271,7 +274,9 @@ function renderUploadResponse(json, options = {}) {
   const sourceLabel = source ? `source: ${source}\n` : '';
   const metaText = `${sourceLabel}bbox: ${JSON.stringify(json.meta.bbox)}\nouterArea: ${json.meta.outerArea.toFixed(2)}\nholes: ${json.meta.holesCount}`;
   setSuccessState(metaText);
-  buildModel(json.geometry);
+  const visualSettings = getVisualSettings(options.visualSettings);
+  const geometry = applyGeometryVisualOverrides(json.geometry, visualSettings);
+  buildModel(geometry, visualSettings);
 }
 
 function parseQuery() {
@@ -282,20 +287,26 @@ function parseQuery() {
   };
 }
 
-function extractSvgFromPayload(payloadRaw) {
+function extractPreviewPayload(payloadRaw) {
+  const fallback = {
+    svg: '',
+    baseMaterialColor: DEFAULT_BASE_MATERIAL_COLOR,
+    laymentThicknessMm: DEFAULT_LAYMENT_THICKNESS_MM
+  };
+
   if (typeof payloadRaw !== 'string' || !payloadRaw.trim()) {
-    return '';
+    return fallback;
   }
 
   const trimmed = payloadRaw.trim();
   if (trimmed.startsWith('<svg')) {
-    return trimmed;
+    return { ...fallback, svg: trimmed };
   }
 
   try {
     const parsed = JSON.parse(trimmed);
     if (typeof parsed === 'string') {
-      return parsed;
+      return { ...fallback, svg: parsed.trim() };
     }
 
     if (parsed && typeof parsed === 'object') {
@@ -307,13 +318,22 @@ function extractSvgFromPayload(payloadRaw) {
         parsed.payload?.svgText
       ];
       const svg = candidates.find((value) => typeof value === 'string' && value.trim());
-      return svg ? svg.trim() : '';
+
+      const metadata = parsed.metadata && typeof parsed.metadata === 'object'
+        ? parsed.metadata
+        : parsed.payload?.metadata;
+
+      return {
+        svg: svg ? svg.trim() : '',
+        baseMaterialColor: normalizeBaseMaterialColor(parsed.baseMaterialColor ?? metadata?.baseMaterialColor),
+        laymentThicknessMm: normalizeLaymentThicknessMm(parsed.laymentThicknessMm ?? metadata?.laymentThicknessMm)
+      };
     }
   } catch {
-    return '';
+    return fallback;
   }
 
-  return '';
+  return fallback;
 }
 
 function loadSvgPayloadFromStorage(payloadKey) {
@@ -322,12 +342,12 @@ function loadSvgPayloadFromStorage(payloadKey) {
     throw new Error('SVG для предпросмотра не передан.');
   }
 
-  const svgText = extractSvgFromPayload(raw);
-  if (!svgText) {
+  const payload = extractPreviewPayload(raw);
+  if (!payload.svg) {
     throw new Error('SVG payload повреждён или некорректен.');
   }
 
-  return svgText;
+  return payload;
 }
 
 async function initAutoloadFromPayloadKey(payloadKey) {
@@ -336,20 +356,27 @@ async function initAutoloadFromPayloadKey(payloadKey) {
     return;
   }
 
-  let svgText = '';
+  let payload;
   try {
-    svgText = loadSvgPayloadFromStorage(payloadKey);
+    payload = loadSvgPayloadFromStorage(payloadKey);
   } catch (err) {
     setErrorState(err instanceof Error ? err.message : 'Не удалось построить 3D предпросмотр.');
     localStorage.removeItem(payloadKey);
     return;
   }
 
-  await uploadSvgText(svgText, { source: `external payload (${payloadKey})`, fileName: `${payloadKey}.svg` });
+  await uploadSvgText(payload.svg, {
+    source: `external payload (${payloadKey})`,
+    fileName: `${payloadKey}.svg`,
+    visualSettings: {
+      baseMaterialColor: payload.baseMaterialColor,
+      laymentThicknessMm: payload.laymentThicknessMm
+    }
+  });
   localStorage.removeItem(payloadKey);
 }
 
-function buildModel(geometry) {
+function buildModel(geometry, visualSettings = {}) {
   if (modelGroup) {
     scene.remove(modelGroup);
     modelGroup.traverse((obj) => {
@@ -438,7 +465,7 @@ function buildModel(geometry) {
   }
 
   const greenMaterial = new THREE.MeshStandardMaterial({
-    color: EVA_GREEN_COLOR,
+    color: getBaseMaterialColorHex(visualSettings.baseMaterialColor),
     metalness: MATERIAL_METALNESS,
     roughness: GREEN_LAYER_ROUGHNESS
   });
@@ -468,6 +495,44 @@ function buildModel(geometry) {
   scene.add(modelGroup);
 
   fitCamera(modelGroup);
+}
+
+function getVisualSettings(rawSettings = {}) {
+  return {
+    baseMaterialColor: normalizeBaseMaterialColor(rawSettings.baseMaterialColor),
+    laymentThicknessMm: normalizeLaymentThicknessMm(rawSettings.laymentThicknessMm)
+  };
+}
+
+function applyGeometryVisualOverrides(geometry, visualSettings) {
+  if (!geometry || typeof geometry !== 'object') {
+    return geometry;
+  }
+
+  const extrusion = geometry.extrusion && typeof geometry.extrusion === 'object'
+    ? geometry.extrusion
+    : {};
+
+  return {
+    ...geometry,
+    extrusion: {
+      ...extrusion,
+      baseDepth: visualSettings.laymentThicknessMm
+    }
+  };
+}
+
+function normalizeBaseMaterialColor(rawColor) {
+  return rawColor === 'blue' ? 'blue' : DEFAULT_BASE_MATERIAL_COLOR;
+}
+
+function normalizeLaymentThicknessMm(rawThickness) {
+  const thickness = Number(rawThickness);
+  return thickness === 65 ? 65 : DEFAULT_LAYMENT_THICKNESS_MM;
+}
+
+function getBaseMaterialColorHex(colorName) {
+  return colorName === 'blue' ? EVA_BLUE_COLOR : EVA_GREEN_COLOR;
 }
 
 
