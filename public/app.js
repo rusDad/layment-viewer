@@ -20,6 +20,11 @@ const PREVIEW_CAMERA_HEIGHT_FACTOR = 0.95;
 const PREVIEW_CAMERA_DEPTH_FACTOR = 0.74;
 const DEFAULT_BASE_MATERIAL_COLOR = 'green';
 const DEFAULT_LAYMENT_THICKNESS_MM = 35;
+const TEXT_OVERLAY_COLOR = '#d9dfda';
+const TEXT_OVERLAY_Z_OFFSET_MM = 0.12;
+const TEXT_CANVAS_PIXELS_PER_MM = 24;
+const TEXT_CANVAS_PADDING_MM = 1.2;
+const MIN_TEXT_FONT_SIZE_MM = 0.5;
 
 const root = document.getElementById('canvas-root');
 const errorsEl = document.getElementById('errors');
@@ -244,10 +249,10 @@ async function uploadSvgFile(file, options = {}) {
     return;
   }
 
-   renderUploadResponse(json, {
-   ...options,
-   source
-   });
+  renderUploadResponse(json, {
+    ...options,
+    source
+  });
 }
 
 async function uploadSvgText(svgText, options = {}) {
@@ -279,7 +284,7 @@ function renderUploadResponse(json, options = {}) {
   setSuccessState(metaText);
   const visualSettings = getVisualSettings(options.visualSettings);
   const geometry = applyGeometryVisualOverrides(json.geometry, visualSettings);
-  buildModel(geometry, visualSettings);
+  buildModel(geometry, visualSettings, Array.isArray(options.texts) ? options.texts : []);
 }
 
 function parseQuery() {
@@ -294,7 +299,8 @@ function extractPreviewPayload(payloadRaw) {
   const fallback = {
     svg: '',
     baseMaterialColor: DEFAULT_BASE_MATERIAL_COLOR,
-    laymentThicknessMm: DEFAULT_LAYMENT_THICKNESS_MM
+    laymentThicknessMm: DEFAULT_LAYMENT_THICKNESS_MM,
+    texts: []
   };
 
   if (typeof payloadRaw !== 'string' || !payloadRaw.trim()) {
@@ -329,7 +335,8 @@ function extractPreviewPayload(payloadRaw) {
       return {
         svg: svg ? svg.trim() : '',
         baseMaterialColor: normalizeBaseMaterialColor(parsed.baseMaterialColor ?? metadata?.baseMaterialColor),
-        laymentThicknessMm: normalizeLaymentThicknessMm(parsed.laymentThicknessMm ?? metadata?.laymentThicknessMm)
+        laymentThicknessMm: normalizeLaymentThicknessMm(parsed.laymentThicknessMm ?? metadata?.laymentThicknessMm),
+        texts: Array.isArray(parsed.parsed?.texts) ? parsed.parsed.texts : []
       };
     }
   } catch {
@@ -374,21 +381,25 @@ async function initAutoloadFromPayloadKey(payloadKey) {
     visualSettings: {
       baseMaterialColor: payload.baseMaterialColor,
       laymentThicknessMm: payload.laymentThicknessMm
-    }
+    },
+    texts: payload.texts
   });
   localStorage.removeItem(payloadKey);
 }
 
-function buildModel(geometry, visualSettings = {}) {
+function buildModel(geometry, visualSettings = {}, texts = []) {
   if (modelGroup) {
     scene.remove(modelGroup);
     modelGroup.traverse((obj) => {
       if (obj.isMesh) {
-        obj.geometry.dispose();
+        if (obj.geometry) {
+          obj.geometry.dispose();
+        }
+
         if (Array.isArray(obj.material)) {
-          obj.material.forEach((m) => m.dispose());
-        } else {
-          obj.material.dispose();
+          obj.material.forEach(disposeMaterial);
+        } else if (obj.material) {
+          disposeMaterial(obj.material);
         }
       }
     });
@@ -495,9 +506,165 @@ function buildModel(geometry, visualSettings = {}) {
     modelGroup.add(topMesh);
   }
 
+  const textOverlayGroup = buildTextOverlayGroup(geometry, texts);
+  if (textOverlayGroup) {
+    modelGroup.add(textOverlayGroup);
+  }
+
   scene.add(modelGroup);
 
   fitCamera(modelGroup);
+}
+
+
+function disposeMaterial(material) {
+  if (!material || typeof material !== 'object') {
+    return;
+  }
+
+  Object.values(material).forEach((value) => {
+    if (value && value.isTexture) {
+      value.dispose();
+    }
+  });
+
+  material.dispose();
+}
+
+function buildTextOverlayGroup(geometry, texts = []) {
+  if (!Array.isArray(texts) || texts.length === 0) {
+    return null;
+  }
+
+  const outerBounds = calcContourBounds(geometry.outer || []);
+  const outerWidthMm = outerBounds.maxX - outerBounds.minX;
+  const outerHeightMm = outerBounds.maxY - outerBounds.minY;
+  if (!Number.isFinite(outerWidthMm) || !Number.isFinite(outerHeightMm) || outerWidthMm <= 0 || outerHeightMm <= 0) {
+    return null;
+  }
+
+  const group = new THREE.Group();
+
+  texts.forEach((item) => {
+    const overlayMesh = createTextOverlayMesh(item, outerWidthMm, outerHeightMm);
+    if (overlayMesh) {
+      group.add(overlayMesh);
+    }
+  });
+
+  return group.children.length > 0 ? group : null;
+}
+
+function createTextOverlayMesh(textItem, outerWidthMm, outerHeightMm) {
+  try {
+    if (!textItem || typeof textItem !== 'object') {
+      return null;
+    }
+
+    const text = typeof textItem.text === 'string' ? textItem.text.trim() : '';
+    if (!text) {
+      return null;
+    }
+
+    const xMm = Number(textItem.x);
+    const yMm = Number(textItem.y);
+    const fontSizeMm = Number(textItem.fontSizeMm);
+    const angleDeg = Number(textItem.angle ?? 0);
+
+    if (!Number.isFinite(xMm) || !Number.isFinite(yMm) || !Number.isFinite(fontSizeMm) || fontSizeMm < MIN_TEXT_FONT_SIZE_MM) {
+      return null;
+    }
+
+    if (xMm < 0 || yMm < 0 || xMm > outerWidthMm || yMm > outerHeightMm) {
+      return null;
+    }
+
+    const texturePayload = createTextCanvasTexture(text, fontSizeMm, textItem.kind);
+    if (!texturePayload) {
+      return null;
+    }
+
+    const plane = new THREE.PlaneGeometry(texturePayload.widthMm, texturePayload.heightMm);
+    const material = new THREE.MeshBasicMaterial({
+      map: texturePayload.texture,
+      transparent: true,
+      depthTest: true,
+      depthWrite: false,
+      toneMapped: false,
+      side: THREE.DoubleSide
+    });
+    const mesh = new THREE.Mesh(plane, material);
+
+    mesh.position.set(
+      xMm + texturePayload.widthMm / 2,
+      yMm - outerHeightMm + texturePayload.heightMm / 2,
+      TEXT_OVERLAY_Z_OFFSET_MM
+    );
+    mesh.rotation.z = Number.isFinite(angleDeg) ? THREE.MathUtils.degToRad(angleDeg) : 0;
+    mesh.renderOrder = 1;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+
+    return mesh;
+  } catch {
+    return null;
+  }
+}
+
+function createTextCanvasTexture(text, fontSizeMm, kind = '') {
+  const pixelsPerMm = TEXT_CANVAS_PIXELS_PER_MM;
+  const fontPx = Math.max(Math.round(fontSizeMm * pixelsPerMm), 12);
+  const paddingPx = Math.max(Math.round(TEXT_CANVAS_PADDING_MM * pixelsPerMm), 8);
+  const fontWeight = kind === 'label' ? 600 : 500;
+  const fontFamily = 'Inter, Arial, sans-serif';
+  const font = `${fontWeight} ${fontPx}px ${fontFamily}`;
+
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  if (!context) {
+    return null;
+  }
+
+  context.font = font;
+  context.textAlign = 'left';
+  context.textBaseline = 'alphabetic';
+  const metrics = context.measureText(text);
+  const textWidthPx = metrics.width;
+  const ascentPx = metrics.actualBoundingBoxAscent || fontPx * 0.8;
+  const descentPx = metrics.actualBoundingBoxDescent || fontPx * 0.22;
+  const textHeightPx = ascentPx + descentPx;
+
+  const canvasWidthPx = Math.ceil(textWidthPx + paddingPx * 2);
+  const canvasHeightPx = Math.ceil(textHeightPx + paddingPx * 2);
+  if (!Number.isFinite(canvasWidthPx) || !Number.isFinite(canvasHeightPx) || canvasWidthPx <= 0 || canvasHeightPx <= 0) {
+    return null;
+  }
+
+  canvas.width = canvasWidthPx;
+  canvas.height = canvasHeightPx;
+
+  context.font = font;
+  context.textAlign = 'left';
+  context.textBaseline = 'alphabetic';
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = TEXT_OVERLAY_COLOR;
+  context.fillText(text, paddingPx, paddingPx + ascentPx);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.generateMipmaps = false;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.needsUpdate = true;
+
+  const widthMm = canvasWidthPx / pixelsPerMm;
+  const heightMm = canvasHeightPx / pixelsPerMm;
+  if (!Number.isFinite(widthMm) || !Number.isFinite(heightMm) || widthMm <= 0 || heightMm <= 0) {
+    texture.dispose();
+    return null;
+  }
+
+  return { texture, widthMm, heightMm };
 }
 
 function getVisualSettings(rawSettings = {}) {
@@ -551,7 +718,7 @@ function contourToShape(outer, holes) {
   const bounds = calcContourBounds(outer);
   const toLocal = (p) => new THREE.Vector2(
     p.x - bounds.minX,
-     p.y - bounds.maxY
+    p.y - bounds.maxY
   );
 
   const shape = buildClosedShape(outer, toLocal);
