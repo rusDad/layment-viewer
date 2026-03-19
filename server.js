@@ -1,11 +1,21 @@
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
 const multer = require('multer');
 const { XMLParser } = require('fast-xml-parser');
 const arcToCubic = require('svg-arc-to-cubic-bezier');
 const polygonClipping = require('polygon-clipping');
 
 const app = express();
-const upload = multer({ storage: multer.memoryStorage() });
+const svgUpload = multer({ storage: multer.memoryStorage() });
+const stlUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 }
+});
+
+const STL_UPLOAD_DIR = path.join(__dirname, 'uploads', 'stl');
+const SAFE_STL_ID_RE = /^[a-zA-Z0-9_-]+$/;
 
 const BASE_DEPTH = 35;
 const POCKET_DEPTH = 20;
@@ -16,9 +26,10 @@ const UNION_RING_EPSILON = 1e-5;
 const UNION_INPUT_SNAP_STEP = 1e-4;
 const UNION_DEBUG = process.env.UNION_DEBUG === '1';
 
+app.use('/svg3d', express.static('public'));
 app.use(express.static('public'));
 
-app.post('/svg3d-api/upload-svg', upload.single('file'), (req, res) => {
+app.post('/svg3d-api/upload-svg', svgUpload.single('file'), (req, res) => {
   const errors = [];
 
   if (!req.file) {
@@ -63,6 +74,71 @@ app.post('/svg3d-api/upload-svg', upload.single('file'), (req, res) => {
     return res.status(400).json({ ok: false, errors: [`Ошибка обработки SVG: ${e.message}`] });
   }
 });
+
+app.post('/svg3d-api/upload-stl', (req, res) => {
+  stlUpload.single('file')(req, res, async (err) => {
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ ok: false, errors: ['STL файл слишком большой. Лимит: 20 MB.'] });
+      }
+
+      return res.status(400).json({ ok: false, errors: [`Ошибка загрузки STL: ${err.message}`] });
+    }
+
+    if (err) {
+      return res.status(400).json({ ok: false, errors: ['Не удалось загрузить STL файл.'] });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ ok: false, errors: ['Файл не передан (поле file).'] });
+    }
+
+    const originalName = String(req.file.originalname || '');
+    if (path.extname(originalName).toLowerCase() !== '.stl') {
+      return res.status(400).json({ ok: false, errors: ['Разрешены только файлы .stl.'] });
+    }
+
+    if (!req.file.buffer || req.file.buffer.length === 0) {
+      return res.status(400).json({ ok: false, errors: ['STL файл пустой.'] });
+    }
+
+    try {
+      await fs.promises.mkdir(STL_UPLOAD_DIR, { recursive: true });
+      const id = generateStlId();
+      const filePath = path.join(STL_UPLOAD_DIR, `${id}.stl`);
+      await fs.promises.writeFile(filePath, req.file.buffer);
+
+      return res.json({
+        ok: true,
+        id,
+        url: `?stl=${id}`
+      });
+    } catch (writeError) {
+      return res.status(500).json({ ok: false, errors: [`Не удалось сохранить STL: ${writeError.message}`] });
+    }
+  });
+});
+
+app.get('/svg3d-api/stl/:id', async (req, res) => {
+  const { id } = req.params;
+
+  if (!SAFE_STL_ID_RE.test(id)) {
+    return res.status(400).json({ ok: false, errors: ['Некорректный STL id.'] });
+  }
+
+  const filePath = path.join(STL_UPLOAD_DIR, `${id}.stl`);
+  try {
+    await fs.promises.access(filePath, fs.constants.R_OK);
+    res.type('model/stl');
+    return res.sendFile(filePath);
+  } catch {
+    return res.status(404).json({ ok: false, errors: ['STL файл не найден.'] });
+  }
+});
+
+function generateStlId() {
+  return crypto.randomUUID().replace(/-/g, '');
+}
 
 if (require.main === module) {
   app.listen(3000, () => {

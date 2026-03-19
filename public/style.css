@@ -17,6 +17,13 @@ body {
   border-right: 1px solid #2c2c2c;
   background: #191919;
   color: #eee;
+  overflow-y: auto;
+}
+
+.upload-section + .upload-section {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .panel h3 {
@@ -26,6 +33,12 @@ body {
 .panel input,
 .panel button {
   margin-top: 8px;
+}
+
+.panel button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .viewport {
@@ -50,6 +63,29 @@ body {
 
 .status-meta {
   color: #b5d7ff;
+}
+
+.status-link {
+  display: grid;
+  gap: 8px;
+}
+
+.status-link code {
+  display: block;
+  overflow-wrap: anywhere;
+  color: #d9dfda;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.status-link a {
+  color: #9fd2ff;
+  text-decoration: none;
+}
+
+.status-link a:hover {
+  text-decoration: underline;
 }
 
 .preview-only {
