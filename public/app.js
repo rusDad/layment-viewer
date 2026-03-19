@@ -26,6 +26,8 @@ const TEXT_OVERLAY_Z_OFFSET_MM = 0.12;
 const TEXT_CANVAS_PIXELS_PER_MM = 24;
 const TEXT_CANVAS_PADDING_MM = 1.2;
 const MIN_TEXT_FONT_SIZE_MM = 0.5;
+const STL_TOP_FACE_DOT_THRESHOLD = 0.72;
+const STL_LOCAL_TOP_NORMAL = new THREE.Vector3(0, 0, 1);
 
 const root = document.getElementById('canvas-root');
 const errorsEl = document.getElementById('errors');
@@ -659,22 +661,122 @@ function buildStlModel(geometry) {
 
   geometry.computeVertexNormals();
 
-  const material = new THREE.MeshStandardMaterial({
+  const baseMaterial = new THREE.MeshStandardMaterial({
     color: getBaseMaterialColorHex(DEFAULT_BASE_MATERIAL_COLOR),
     metalness: MATERIAL_METALNESS,
     roughness: GREEN_LAYER_ROUGHNESS
   });
+  const topMaterial = new THREE.MeshStandardMaterial({
+    color: TOP_LAYER_COLOR,
+    metalness: MATERIAL_METALNESS,
+    roughness: TOP_LAYER_ROUGHNESS
+  });
 
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.castShadow = isPreviewMode(viewerMode);
-  mesh.receiveShadow = isPreviewMode(viewerMode);
+  const { baseGeometry, topGeometry } = splitStlGeometryByTopFaces(geometry);
+  geometry.dispose();
 
   modelGroup = new THREE.Group();
   modelGroup.rotation.x = -Math.PI / 2;
-  modelGroup.add(mesh);
+
+  if (baseGeometry) {
+    const baseMesh = new THREE.Mesh(baseGeometry, baseMaterial);
+    baseMesh.castShadow = isPreviewMode(viewerMode);
+    baseMesh.receiveShadow = isPreviewMode(viewerMode);
+    modelGroup.add(baseMesh);
+  } else {
+    baseMaterial.dispose();
+  }
+
+  if (topGeometry) {
+    const topMesh = new THREE.Mesh(topGeometry, topMaterial);
+    topMesh.castShadow = isPreviewMode(viewerMode);
+    topMesh.receiveShadow = isPreviewMode(viewerMode);
+    modelGroup.add(topMesh);
+  } else {
+    topMaterial.dispose();
+  }
 
   scene.add(modelGroup);
   fitCamera(modelGroup);
+}
+
+function splitStlGeometryByTopFaces(geometry) {
+  const sourceGeometry = geometry.index ? geometry.toNonIndexed() : geometry.clone();
+  const positionAttr = sourceGeometry.getAttribute('position');
+
+  if (!positionAttr || positionAttr.count < 3) {
+    sourceGeometry.dispose();
+    return { baseGeometry: geometry.clone(), topGeometry: null };
+  }
+
+  if (!sourceGeometry.getAttribute('normal')) {
+    sourceGeometry.computeVertexNormals();
+  }
+
+  const normalAttr = sourceGeometry.getAttribute('normal');
+  const basePositions = [];
+  const baseNormals = [];
+  const topPositions = [];
+  const topNormals = [];
+  const triangleNormal = new THREE.Vector3();
+
+  for (let i = 0; i < positionAttr.count; i += 3) {
+    triangleNormal.set(0, 0, 0);
+
+    for (let vertex = 0; vertex < 3; vertex += 1) {
+      triangleNormal.x += normalAttr.getX(i + vertex);
+      triangleNormal.y += normalAttr.getY(i + vertex);
+      triangleNormal.z += normalAttr.getZ(i + vertex);
+    }
+
+    if (triangleNormal.lengthSq() === 0) {
+      triangleNormal.set(normalAttr.getX(i), normalAttr.getY(i), normalAttr.getZ(i));
+    }
+
+    const dot = triangleNormal.normalize().dot(STL_LOCAL_TOP_NORMAL);
+    const isTopFace = dot >= STL_TOP_FACE_DOT_THRESHOLD;
+    const targetPositions = isTopFace ? topPositions : basePositions;
+    const targetNormals = isTopFace ? topNormals : baseNormals;
+
+    for (let vertex = 0; vertex < 3; vertex += 1) {
+      targetPositions.push(
+        positionAttr.getX(i + vertex),
+        positionAttr.getY(i + vertex),
+        positionAttr.getZ(i + vertex)
+      );
+      targetNormals.push(
+        normalAttr.getX(i + vertex),
+        normalAttr.getY(i + vertex),
+        normalAttr.getZ(i + vertex)
+      );
+    }
+  }
+
+  sourceGeometry.dispose();
+
+  return {
+    baseGeometry: buildSplitGeometry(basePositions, baseNormals),
+    topGeometry: buildSplitGeometry(topPositions, topNormals)
+  };
+}
+
+function buildSplitGeometry(positions, normals) {
+  if (!Array.isArray(positions) || positions.length === 0) {
+    return null;
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+
+  if (Array.isArray(normals) && normals.length === positions.length) {
+    geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  } else {
+    geometry.computeVertexNormals();
+  }
+
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
 }
 
 function disposeMaterial(material) {
