@@ -26,7 +26,8 @@ const TEXT_OVERLAY_Z_OFFSET_MM = 0.12;
 const TEXT_CANVAS_PIXELS_PER_MM = 24;
 const TEXT_CANVAS_PADDING_MM = 1.2;
 const MIN_TEXT_FONT_SIZE_MM = 0.5;
-const STL_TOP_FACE_DOT_THRESHOLD = 0.72;
+const STL_TOP_FACE_DOT_THRESHOLD = 0.6;
+const STL_TOP_FACE_HEIGHT_EPS_MM = 0.2;
 const STL_LOCAL_TOP_NORMAL = new THREE.Vector3(0, 0, 1);
 
 const root = document.getElementById('canvas-root');
@@ -718,23 +719,40 @@ function splitStlGeometryByTopFaces(geometry) {
   const baseNormals = [];
   const topPositions = [];
   const topNormals = [];
-  const triangleNormal = new THREE.Vector3();
+  sourceGeometry.computeBoundingBox();
+
+  const bbox = sourceGeometry.boundingBox;
+  const topHeight = bbox ? bbox.max.dot(STL_LOCAL_TOP_NORMAL) : null;
+  const vertexA = new THREE.Vector3();
+  const vertexB = new THREE.Vector3();
+  const vertexC = new THREE.Vector3();
+  const edgeAB = new THREE.Vector3();
+  const edgeAC = new THREE.Vector3();
+  const faceNormal = new THREE.Vector3();
+  const fallbackNormal = new THREE.Vector3();
 
   for (let i = 0; i < positionAttr.count; i += 3) {
-    triangleNormal.set(0, 0, 0);
+    vertexA.fromBufferAttribute(positionAttr, i);
+    vertexB.fromBufferAttribute(positionAttr, i + 1);
+    vertexC.fromBufferAttribute(positionAttr, i + 2);
 
-    for (let vertex = 0; vertex < 3; vertex += 1) {
-      triangleNormal.x += normalAttr.getX(i + vertex);
-      triangleNormal.y += normalAttr.getY(i + vertex);
-      triangleNormal.z += normalAttr.getZ(i + vertex);
-    }
+    edgeAB.subVectors(vertexB, vertexA);
+    edgeAC.subVectors(vertexC, vertexA);
+    faceNormal.crossVectors(edgeAB, edgeAC);
 
-    if (triangleNormal.lengthSq() === 0) {
-      triangleNormal.set(normalAttr.getX(i), normalAttr.getY(i), normalAttr.getZ(i));
-    }
-
-    const dot = triangleNormal.normalize().dot(STL_LOCAL_TOP_NORMAL);
-    const isTopFace = dot >= STL_TOP_FACE_DOT_THRESHOLD;
+    const upDot = faceNormal.lengthSq() > 0
+      ? faceNormal.normalize().dot(STL_LOCAL_TOP_NORMAL)
+      : normalAttr
+        ? STL_LOCAL_TOP_NORMAL.dot(fallbackNormal.set(
+          normalAttr.getX(i),
+          normalAttr.getY(i),
+          normalAttr.getZ(i)
+        ).normalize())
+        : -1;
+    const minVertexHeight = Math.min(vertexA.dot(STL_LOCAL_TOP_NORMAL), vertexB.dot(STL_LOCAL_TOP_NORMAL), vertexC.dot(STL_LOCAL_TOP_NORMAL));
+    const isWithinTopBand = Number.isFinite(topHeight)
+      && topHeight - minVertexHeight <= TOP_SKIN_THICKNESS_MM + STL_TOP_FACE_HEIGHT_EPS_MM;
+    const isTopFace = upDot > STL_TOP_FACE_DOT_THRESHOLD && isWithinTopBand;
     const targetPositions = isTopFace ? topPositions : basePositions;
     const targetNormals = isTopFace ? topNormals : baseNormals;
 
