@@ -1,5 +1,6 @@
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+import { STLLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/STLLoader.js';
 import { mergeGeometries } from 'https://unpkg.com/three@0.160.0/examples/jsm/utils/BufferGeometryUtils.js';
 
 const ViewerMode = {
@@ -32,6 +33,10 @@ const metaEl = document.getElementById('meta');
 const previewStateEl = document.getElementById('preview-state');
 const fileInput = document.getElementById('file');
 const uploadButton = document.getElementById('upload');
+const stlFileInput = document.getElementById('stl-file');
+const stlUploadButton = document.getElementById('stl-upload');
+const stlStatusEl = document.getElementById('stl-status');
+const stlLinkEl = document.getElementById('stl-link');
 
 const query = parseQuery();
 const viewerMode = getViewerMode(query);
@@ -94,9 +99,14 @@ function animate() {
 animate();
 
 uploadButton.addEventListener('click', uploadSvg);
+stlUploadButton?.addEventListener('click', uploadStl);
 
 if (isPreviewMode(viewerMode)) {
-  initAutoloadFromPayloadKey(query.payloadKey);
+  if (query.stl) {
+    initAutoloadFromStlId(query.stl);
+  } else {
+    initAutoloadFromPayloadKey(query.payloadKey);
+  }
 }
 
 async function uploadSvg() {
@@ -108,13 +118,45 @@ async function uploadSvg() {
   await uploadSvgFile(fileInput.files[0], { source: 'manual upload' });
 }
 
+async function uploadStl() {
+  if (!stlFileInput?.files?.length) {
+    setStlUploadState('Выберите STL файл.', true);
+    return;
+  }
+
+  setStlUploadState('Загрузка STL...');
+  setStlUploadLink('');
+
+  const fd = new FormData();
+  fd.append('file', stlFileInput.files[0]);
+
+  let json;
+  try {
+    const res = await fetch('/svg3d-api/upload-stl', { method: 'POST', body: fd });
+    json = await res.json();
+  } catch (err) {
+    setStlUploadState(`Ошибка загрузки STL: ${err instanceof Error ? err.message : String(err)}`, true);
+    return;
+  }
+
+  if (!json?.ok || !json?.id) {
+    const errors = Array.isArray(json?.errors) ? json.errors : ['Не удалось сохранить STL.'];
+    setStlUploadState(errors.join('\n'), true);
+    return;
+  }
+
+  const previewUrl = buildPreviewUrl(json.url || `?stl=${json.id}`);
+  setStlUploadState(`STL сохранён. ID: ${json.id}`);
+  setStlUploadLink(previewUrl);
+}
+
 function getViewerMode(parsedQuery) {
   const isForcedDebug = parsedQuery.debug === '1';
   if (isForcedDebug) {
     return ViewerMode.DEBUG;
   }
 
-  return parsedQuery.payloadKey ? ViewerMode.PREVIEW : ViewerMode.DEBUG;
+  return parsedQuery.payloadKey || parsedQuery.stl ? ViewerMode.PREVIEW : ViewerMode.DEBUG;
 }
 
 function isPreviewMode(mode) {
@@ -184,9 +226,15 @@ function configureSceneForDebugMode() {
   scene.add(axesHelper);
 }
 
-function clearDebugState() {
+function clearSvgDebugState() {
   errorsEl.textContent = '';
   metaEl.textContent = '';
+}
+
+function clearDebugState() {
+  clearSvgDebugState();
+  setStlUploadState('');
+  setStlUploadLink('');
 }
 
 function setPreviewState(message) {
@@ -210,7 +258,7 @@ function setLoadingState(message = 'Готовим 3D предпросмотр..
     return;
   }
 
-  clearDebugState();
+  clearSvgDebugState();
   errorsEl.textContent = 'Загрузка...';
 }
 
@@ -231,6 +279,40 @@ function setSuccessState(metaText) {
 
   errorsEl.textContent = '';
   metaEl.textContent = metaText;
+}
+
+function setStlUploadState(message, isError = false) {
+  if (!stlStatusEl) {
+    return;
+  }
+
+  stlStatusEl.textContent = message || '';
+  stlStatusEl.classList.toggle('status-error', Boolean(message) && isError);
+  stlStatusEl.classList.toggle('status-meta', Boolean(message) && !isError);
+}
+
+function setStlUploadLink(url) {
+  if (!stlLinkEl) {
+    return;
+  }
+
+  stlLinkEl.innerHTML = '';
+  if (!url) {
+    return;
+  }
+
+  const text = document.createElement('code');
+  text.textContent = url;
+
+  const link = document.createElement('a');
+  link.href = url;
+  link.textContent = 'Открыть preview';
+
+  stlLinkEl.append(text, link);
+}
+
+function buildPreviewUrl(relativeUrl) {
+  return new URL(relativeUrl, window.location.href).toString();
 }
 
 async function uploadSvgFile(file, options = {}) {
@@ -291,6 +373,7 @@ function parseQuery() {
   const params = new URLSearchParams(window.location.search);
   return {
     payloadKey: params.get('payloadKey')?.trim() || '',
+    stl: params.get('stl')?.trim() || '',
     debug: params.get('debug')?.trim() || ''
   };
 }
@@ -360,6 +443,54 @@ function loadSvgPayloadFromStorage(payloadKey) {
   return payload;
 }
 
+async function initAutoloadFromStlId(stlId) {
+  if (!stlId) {
+    setErrorState('STL для предпросмотра не передан.');
+    return;
+  }
+
+  setLoadingState('Загружаем STL модель...');
+
+  try {
+    const geometry = await loadStlGeometry(stlId);
+    buildStlModel(geometry);
+    setSuccessState('');
+  } catch (err) {
+    setErrorState(err instanceof Error ? err.message : 'Не удалось загрузить STL модель.');
+  }
+}
+
+async function loadStlGeometry(stlId) {
+  const normalizedId = typeof stlId === 'string' ? stlId.trim() : '';
+  if (!/^[a-zA-Z0-9_-]+$/.test(normalizedId)) {
+    throw new Error('Некорректный STL id.');
+  }
+
+  const res = await fetch(`/svg3d-api/stl/${encodeURIComponent(normalizedId)}`);
+  if (!res.ok) {
+    let message = 'Не удалось загрузить STL модель.';
+
+    try {
+      const payload = await res.json();
+      const errors = Array.isArray(payload?.errors) ? payload.errors : [];
+      if (errors.length > 0) {
+        message = errors.join('\n');
+      }
+    } catch {
+      // ignore non-JSON response and keep fallback message
+    }
+
+    throw new Error(message);
+  }
+
+  const buffer = await res.arrayBuffer();
+  const geometry = new STLLoader().parse(buffer);
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
 async function initAutoloadFromPayloadKey(payloadKey) {
   if (!payloadKey) {
     setErrorState('SVG для предпросмотра не передан.');
@@ -387,23 +518,30 @@ async function initAutoloadFromPayloadKey(payloadKey) {
   localStorage.removeItem(payloadKey);
 }
 
-function buildModel(geometry, visualSettings = {}, texts = []) {
-  if (modelGroup) {
-    scene.remove(modelGroup);
-    modelGroup.traverse((obj) => {
-      if (obj.isMesh) {
-        if (obj.geometry) {
-          obj.geometry.dispose();
-        }
-
-        if (Array.isArray(obj.material)) {
-          obj.material.forEach(disposeMaterial);
-        } else if (obj.material) {
-          disposeMaterial(obj.material);
-        }
-      }
-    });
+function clearCurrentModel() {
+  if (!modelGroup) {
+    return;
   }
+
+  scene.remove(modelGroup);
+  modelGroup.traverse((obj) => {
+    if (obj.isMesh) {
+      if (obj.geometry) {
+        obj.geometry.dispose();
+      }
+
+      if (Array.isArray(obj.material)) {
+        obj.material.forEach(disposeMaterial);
+      } else if (obj.material) {
+        disposeMaterial(obj.material);
+      }
+    }
+  });
+  modelGroup = null;
+}
+
+function buildModel(geometry, visualSettings = {}, texts = []) {
+  clearCurrentModel();
 
   const topRegions = getTopRegions(geometry);
   const shapeBottom = contourToShape(geometry.outer, []);
@@ -516,6 +654,28 @@ function buildModel(geometry, visualSettings = {}, texts = []) {
   fitCamera(modelGroup);
 }
 
+function buildStlModel(geometry) {
+  clearCurrentModel();
+
+  geometry.computeVertexNormals();
+
+  const material = new THREE.MeshStandardMaterial({
+    color: getBaseMaterialColorHex(DEFAULT_BASE_MATERIAL_COLOR),
+    metalness: MATERIAL_METALNESS,
+    roughness: GREEN_LAYER_ROUGHNESS
+  });
+
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.castShadow = isPreviewMode(viewerMode);
+  mesh.receiveShadow = isPreviewMode(viewerMode);
+
+  modelGroup = new THREE.Group();
+  modelGroup.rotation.x = -Math.PI / 2;
+  modelGroup.add(mesh);
+
+  scene.add(modelGroup);
+  fitCamera(modelGroup);
+}
 
 function disposeMaterial(material) {
   if (!material || typeof material !== 'object') {

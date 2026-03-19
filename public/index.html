@@ -9,11 +9,21 @@
   <body>
     <div class="layout">
       <aside class="panel debug-only">
-        <h3>SVG → 3D ложемент</h3>
-        <input id="file" type="file" accept=".svg,image/svg+xml" />
-        <button id="upload">Upload SVG</button>
-        <div id="errors" class="status status-error" role="status" aria-live="polite"></div>
-        <div id="meta" class="status status-meta"></div>
+        <section class="upload-section">
+          <h3>SVG → 3D ложемент</h3>
+          <input id="file" type="file" accept=".svg,image/svg+xml" />
+          <button id="upload">Upload SVG</button>
+          <div id="errors" class="status status-error" role="status" aria-live="polite"></div>
+          <div id="meta" class="status status-meta"></div>
+        </section>
+
+        <section class="upload-section">
+          <h3>STL preview PoC</h3>
+          <input id="stl-file" type="file" accept=".stl,model/stl,application/sla" />
+          <button id="stl-upload">Upload STL</button>
+          <div id="stl-status" class="status" role="status" aria-live="polite"></div>
+          <div id="stl-link" class="status status-link"></div>
+        </section>
       </aside>
 
       <main class="viewport">
