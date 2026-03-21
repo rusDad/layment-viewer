@@ -195,7 +195,7 @@ function configureSceneForPreviewMode() {
 
   ambientLight.intensity = 0.52;
   mainDirectionalLight.intensity = 0.95;
-  mainDirectionalLight.position.set(-60, 320, 200);
+  mainDirectionalLight.position.set(-60, 320, 0);
   mainDirectionalLight.castShadow = true;
   mainDirectionalLight.shadow.mapSize.set(2048, 2048);
   mainDirectionalLight.shadow.radius = 6;
