@@ -439,6 +439,7 @@ function loadSvgPayloadFromStorage(payloadKey) {
   }
 
   const payload = extractPreviewPayload(raw);
+  console.log('viewer payload texts', payload.texts);
   if (!payload.svg) {
     throw new Error('SVG payload повреждён или некорректен.');
   }
@@ -836,6 +837,7 @@ function buildTextOverlayGroup(geometry, texts = []) {
 }
 
 function createTextOverlayMesh(textItem, outerWidthMm, outerHeightMm) {
+  console.log('text item for overlay', textItem);
   try {
     if (!textItem || typeof textItem !== 'object') {
       return null;
