@@ -883,7 +883,7 @@ function createTextOverlayMesh(textItem, outerWidthMm, outerHeightMm) {
 
     mesh.position.set(
       xMm + texturePayload.widthMm / 2,
-      yMm - outerHeightMm + texturePayload.heightMm / 2,
+      outerHeightMm - yMm - texturePayload.heightMm / 2,
       TEXT_OVERLAY_Z_OFFSET_MM
     );
     mesh.rotation.z = Number.isFinite(angleDeg) ? THREE.MathUtils.degToRad(angleDeg) : 0;
