@@ -9,19 +9,19 @@ const ViewerMode = {
 };
 
 const TOP_SKIN_THICKNESS_MM = 4;
-const TOP_LAYER_COLOR = 0x333836;
+const TOP_LAYER_COLOR = 0x3a3a3a;
 const EVA_GREEN_COLOR = 0x6ea978;
 const EVA_BLUE_COLOR = 0x5f7892;
-const MATERIAL_METALNESS = 0.015;
-const TOP_LAYER_ROUGHNESS = 0.8;
-const GREEN_LAYER_ROUGHNESS = 0.82;
+const MATERIAL_METALNESS = 0.012;
+const TOP_LAYER_ROUGHNESS = 0.75;
+const GREEN_LAYER_ROUGHNESS = 0.85;
 const PREVIEW_FIT_DISTANCE_FACTOR = 1.68;
 const DEBUG_FIT_DISTANCE_FACTOR = 1.6;
 const PREVIEW_CAMERA_HEIGHT_FACTOR = 0.95;
 const PREVIEW_CAMERA_DEPTH_FACTOR = 0.74;
 const DEFAULT_BASE_MATERIAL_COLOR = 'green';
 const DEFAULT_LAYMENT_THICKNESS_MM = 35;
-const TEXT_OVERLAY_COLOR = '#d9dfda';
+const TEXT_OVERLAY_COLOR = '#101010';
 const TEXT_OVERLAY_Z_OFFSET_MM = 0.5;
 const TEXT_CANVAS_PIXELS_PER_MM = 24;
 const TEXT_CANVAS_PADDING_MM = 1.2;
@@ -195,7 +195,7 @@ function configureSceneForPreviewMode() {
 
   ambientLight.intensity = 0.52;
   mainDirectionalLight.intensity = 0.95;
-  mainDirectionalLight.position.set(150, 220, 130);
+  mainDirectionalLight.position.set(-100, 220, 100);
   mainDirectionalLight.castShadow = true;
   mainDirectionalLight.shadow.mapSize.set(2048, 2048);
   mainDirectionalLight.shadow.radius = 6;
