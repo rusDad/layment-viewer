@@ -422,7 +422,7 @@ function extractPreviewPayload(payloadRaw) {
         svg: svg ? svg.trim() : '',
         baseMaterialColor: normalizeBaseMaterialColor(parsed.baseMaterialColor ?? metadata?.baseMaterialColor),
         laymentThicknessMm: normalizeLaymentThicknessMm(parsed.laymentThicknessMm ?? metadata?.laymentThicknessMm),
-        texts: Array.isArray(parsed.parsed?.texts) ? parsed.parsed.texts : []
+        texts: Array.isArray(parsed.texts) ? parsed.texts : []
       };
     }
   } catch {
