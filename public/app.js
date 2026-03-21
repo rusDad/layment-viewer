@@ -22,7 +22,7 @@ const PREVIEW_CAMERA_DEPTH_FACTOR = 0.74;
 const DEFAULT_BASE_MATERIAL_COLOR = 'green';
 const DEFAULT_LAYMENT_THICKNESS_MM = 35;
 const TEXT_OVERLAY_COLOR = '#d9dfda';
-const TEXT_OVERLAY_Z_OFFSET_MM = 0.12;
+const TEXT_OVERLAY_Z_OFFSET_MM = 1.0;
 const TEXT_CANVAS_PIXELS_PER_MM = 24;
 const TEXT_CANVAS_PADDING_MM = 1.2;
 const MIN_TEXT_FONT_SIZE_MM = 0.5;
@@ -873,7 +873,11 @@ function createTextOverlayMesh(textItem, outerWidthMm, outerHeightMm) {
       depthTest: true,
       depthWrite: false,
       toneMapped: false,
-      side: THREE.DoubleSide
+      side: THREE.DoubleSide,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+      alphaTest: 0.05
     });
     const mesh = new THREE.Mesh(plane, material);
 
