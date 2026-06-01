@@ -102,9 +102,9 @@ export function buildArcSegments(start, end, wordsByLetter, motion, modalState, 
   const hasJ = wordsByLetter.has('J');
   if (!hasI && !hasJ) {
     if (wordsByLetter.has('R')) {
-      return { segment: null, warning: `line ${sourceLine}: R arcs are not supported in NC preview; use I/J arcs.` };
+      return buildRadiusArcSegments(start, end, wordsByLetter, motion, modalState, sourceLine);
     }
-    return { segment: null, warning: `line ${sourceLine}: ${motion} skipped; arc center I/J is missing.` };
+    return { segment: null, warning: `line ${sourceLine}: ${motion} skipped; arc center I/J or radius R is missing.` };
   }
 
   const unitScale = getUnitScale(modalState.units);
@@ -113,6 +113,23 @@ export function buildArcSegments(start, end, wordsByLetter, motion, modalState, 
   const center = modalState.arcCenterMode === 'absolute'
     ? { x: iValue, y: jValue }
     : { x: start.x + iValue, y: start.y + jValue };
+
+  return buildCenterArcSegments(start, end, center, motion, sourceLine);
+}
+
+function buildRadiusArcSegments(start, end, wordsByLetter, motion, modalState, sourceLine) {
+  const unitScale = getUnitScale(modalState.units);
+  const radius = wordsByLetter.get('R') * unitScale;
+  const center = resolveRadiusArcCenter(start, end, radius, motion);
+
+  if (!center) {
+    return { segment: null, warning: `line ${sourceLine}: ${motion} skipped; invalid R arc geometry.` };
+  }
+
+  return buildCenterArcSegments(start, end, center, motion, sourceLine);
+}
+
+function buildCenterArcSegments(start, end, center, motion, sourceLine) {
   const startRadius = Math.hypot(start.x - center.x, start.y - center.y);
   const endRadius = Math.hypot(end.x - center.x, end.y - center.y);
 
@@ -127,8 +144,8 @@ export function buildArcSegments(start, end, wordsByLetter, motion, modalState, 
   const startAngle = Math.atan2(start.y - center.y, start.x - center.x);
   const endAngle = Math.atan2(end.y - center.y, end.x - center.x);
   const sweep = getArcSweep(startAngle, endAngle, motion, samePoint2(start, end));
-  const chordMm = Math.max(startRadius * Math.abs(sweep), 0);
-  const segmentsCount = clamp(Math.ceil(chordMm / 3), 12, 96);
+  const arcLengthMm = Math.max(startRadius * Math.abs(sweep), 0);
+  const segmentsCount = clamp(Math.ceil(arcLengthMm / 3), 12, 96);
   const points = [];
 
   for (let i = 0; i <= segmentsCount; i += 1) {
@@ -274,6 +291,55 @@ function resolveTargetPosition(current, wordsByLetter, modalState) {
   });
 
   return next;
+}
+
+function resolveRadiusArcCenter(start, end, radius, motion) {
+  if (!Number.isFinite(radius) || Math.abs(radius) <= 1e-9 || samePoint2(start, end)) {
+    return null;
+  }
+
+  const radiusAbs = Math.abs(radius);
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const chordLength = Math.hypot(dx, dy);
+
+  if (!Number.isFinite(chordLength) || chordLength <= 1e-9) {
+    return null;
+  }
+
+  const halfChord = chordLength / 2;
+  if (halfChord > radiusAbs + 1e-6) {
+    return null;
+  }
+
+  const midpoint = {
+    x: (start.x + end.x) / 2,
+    y: (start.y + end.y) / 2
+  };
+  const heightSquared = Math.max((radiusAbs * radiusAbs) - (halfChord * halfChord), 0);
+  const height = Math.sqrt(heightSquared);
+  const normal = { x: -dy / chordLength, y: dx / chordLength };
+  const candidates = [
+    { x: midpoint.x + normal.x * height, y: midpoint.y + normal.y * height },
+    { x: midpoint.x - normal.x * height, y: midpoint.y - normal.y * height }
+  ];
+  const wantsMajorArc = radius < 0;
+
+  return candidates.reduce((best, center) => {
+    const startAngle = Math.atan2(start.y - center.y, start.x - center.x);
+    const endAngle = Math.atan2(end.y - center.y, end.x - center.x);
+    const sweep = getArcSweep(startAngle, endAngle, motion, false);
+    const sweepMagnitude = Math.abs(sweep);
+    const isMajorArc = sweepMagnitude > Math.PI + 1e-9;
+    const signPenalty = isMajorArc === wantsMajorArc ? 0 : Math.PI * 2;
+    const targetSweep = wantsMajorArc ? Math.PI * 1.5 : Math.PI / 2;
+    const score = signPenalty + Math.abs(sweepMagnitude - targetSweep);
+
+    if (!best || score < best.score) {
+      return { center, score };
+    }
+    return best;
+  }, null)?.center ?? null;
 }
 
 function getArcSweep(startAngle, endAngle, motion, isFullCircle) {
