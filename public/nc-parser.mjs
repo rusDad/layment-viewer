@@ -3,7 +3,7 @@ const LINEAR_MOTIONS = new Set(['G0', 'G1']);
 const ARC_MOTIONS = new Set(['G2', 'G3']);
 
 export const NC_MAX_FILE_BYTES = 5 * 1024 * 1024;
-export const NC_MAX_RENDERED_POINTS = 100000;
+export const NC_MAX_RENDERED_POINTS = 200000;
 
 export function stripGcodeComments(line) {
   if (typeof line !== 'string') {
