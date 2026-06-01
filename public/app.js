@@ -2,6 +2,7 @@ import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
 import { STLLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/STLLoader.js';
 import { mergeGeometries } from 'https://unpkg.com/three@0.160.0/examples/jsm/utils/BufferGeometryUtils.js';
+import { NC_MAX_FILE_BYTES, parseNcToToolpath } from './nc-parser.mjs';
 
 const ViewerMode = {
   PREVIEW: 'preview',
@@ -29,6 +30,7 @@ const MIN_TEXT_FONT_SIZE_MM = 0.5;
 const STL_TOP_FACE_DOT_THRESHOLD = 0.6;
 const STL_TOP_FACE_HEIGHT_EPS_MM = 0.2;
 const STL_LOCAL_TOP_NORMAL = new THREE.Vector3(0, 0, 1);
+const NC_DEFAULT_COLORS = { G0: '#7fb7ff', G1: '#42d36b', G2: '#ffad33', G3: '#d45cff' };
 
 const root = document.getElementById('canvas-root');
 const errorsEl = document.getElementById('errors');
@@ -40,6 +42,20 @@ const stlFileInput = document.getElementById('stl-file');
 const stlUploadButton = document.getElementById('stl-upload');
 const stlStatusEl = document.getElementById('stl-status');
 const stlLinkEl = document.getElementById('stl-link');
+const ncFileInput = document.getElementById('nc-file');
+const ncPreviewButton = document.getElementById('nc-preview');
+const ncStatusEl = document.getElementById('nc-status');
+const ncWidthInput = document.getElementById('nc-width');
+const ncHeightInput = document.getElementById('nc-height');
+const ncThicknessInput = document.getElementById('nc-thickness');
+const ncOpacityInput = document.getElementById('nc-opacity');
+const ncOpacityValueEl = document.getElementById('nc-opacity-value');
+const ncColorInputs = {
+  G0: document.getElementById('nc-color-g0'),
+  G1: document.getElementById('nc-color-g1'),
+  G2: document.getElementById('nc-color-g2'),
+  G3: document.getElementById('nc-color-g3')
+};
 
 const query = parseQuery();
 const viewerMode = getViewerMode(query);
@@ -83,6 +99,9 @@ scene.add(shadowReceiver);
 configureSceneForMode(viewerMode);
 
 let modelGroup = null;
+let ncPreviewGroup = null;
+let ncBoxMaterial = null;
+const ncLineMaterials = { G0: null, G1: null, G2: null, G3: null };
 
 function resize() {
   const w = root.clientWidth;
@@ -103,6 +122,10 @@ animate();
 
 uploadButton.addEventListener('click', uploadSvg);
 stlUploadButton?.addEventListener('click', uploadStl);
+ncPreviewButton?.addEventListener('click', buildNcPreviewFromUi);
+ncOpacityInput?.addEventListener('input', updateNcVisualSettings);
+Object.values(ncColorInputs).forEach((input) => input?.addEventListener('input', updateNcVisualSettings));
+updateNcOpacityLabel();
 
 if (isPreviewMode(viewerMode)) {
   if (query.stl) {
@@ -238,6 +261,7 @@ function clearDebugState() {
   clearSvgDebugState();
   setStlUploadState('');
   setStlUploadLink('');
+  setNcStatus('');
 }
 
 function setPreviewState(message) {
@@ -312,6 +336,266 @@ function setStlUploadLink(url) {
   link.textContent = 'Открыть preview';
 
   stlLinkEl.append(text, link);
+}
+
+
+function setNcStatus(message, isError = false) {
+  if (!ncStatusEl) {
+    return;
+  }
+
+  ncStatusEl.textContent = message || '';
+  ncStatusEl.classList.toggle('status-error', Boolean(message) && isError);
+  ncStatusEl.classList.toggle('status-meta', Boolean(message) && !isError);
+}
+
+async function buildNcPreviewFromUi() {
+  if (isPreviewMode(viewerMode)) {
+    return;
+  }
+
+  const file = ncFileInput?.files?.[0];
+  if (!file) {
+    setNcStatus('Выберите .nc файл.', true);
+    return;
+  }
+
+  if (file.size > NC_MAX_FILE_BYTES) {
+    setNcStatus(`Файл слишком большой: максимум ${Math.round(NC_MAX_FILE_BYTES / 1024 / 1024)} MB.`, true);
+    return;
+  }
+
+  const dimensions = getNcDimensionsFromUi();
+  if (!dimensions) {
+    setNcStatus('Некорректные габариты ложемента: width/height/thickness должны быть положительными числами.', true);
+    return;
+  }
+
+  let text;
+  try {
+    text = await file.text();
+  } catch (err) {
+    setNcStatus(`Не удалось прочитать .nc файл: ${err instanceof Error ? err.message : String(err)}`, true);
+    return;
+  }
+
+  if (!text.trim()) {
+    setNcStatus('NC файл пустой.', true);
+    return;
+  }
+
+  let toolpath;
+  try {
+    toolpath = parseNcToToolpath(text);
+  } catch (err) {
+    setNcStatus(`Не удалось распарсить NC: ${err instanceof Error ? err.message : String(err)}`, true);
+    return;
+  }
+
+  if (toolpath.segments.length === 0) {
+    setNcStatus(formatNcStatus(toolpath, 'Движения G0/G1/G2/G3 не найдены.'), true);
+    return;
+  }
+
+  buildNcPreview(toolpath, dimensions);
+  setNcStatus(formatNcStatus(toolpath));
+}
+
+function getNcDimensionsFromUi() {
+  const width = Number(ncWidthInput?.value);
+  const height = Number(ncHeightInput?.value);
+  const thickness = Number(ncThicknessInput?.value);
+
+  if (![width, height, thickness].every((value) => Number.isFinite(value) && value > 0)) {
+    return null;
+  }
+
+  return { width, height, thickness };
+}
+
+function getNcVisualSettings() {
+  return {
+    opacity: clampNumber(Number(ncOpacityInput?.value ?? 0.3), 0, 1),
+    colors: {
+      G0: ncColorInputs.G0?.value || NC_DEFAULT_COLORS.G0,
+      G1: ncColorInputs.G1?.value || NC_DEFAULT_COLORS.G1,
+      G2: ncColorInputs.G2?.value || NC_DEFAULT_COLORS.G2,
+      G3: ncColorInputs.G3?.value || NC_DEFAULT_COLORS.G3
+    }
+  };
+}
+
+function updateNcVisualSettings() {
+  updateNcOpacityLabel();
+  const settings = getNcVisualSettings();
+
+  if (ncBoxMaterial) {
+    ncBoxMaterial.opacity = settings.opacity;
+    ncBoxMaterial.needsUpdate = true;
+  }
+
+  Object.entries(ncLineMaterials).forEach(([motion, material]) => {
+    if (material) {
+      material.color.set(settings.colors[motion]);
+      material.needsUpdate = true;
+    }
+  });
+}
+
+function updateNcOpacityLabel() {
+  if (ncOpacityValueEl && ncOpacityInput) {
+    ncOpacityValueEl.textContent = Number(ncOpacityInput.value).toFixed(2);
+  }
+}
+
+function buildNcPreview(toolpath, dimensions) {
+  clearCurrentModel();
+  clearNcPreview();
+
+  const settings = getNcVisualSettings();
+  ncPreviewGroup = new THREE.Group();
+  ncPreviewGroup.name = 'NC toolpath preview';
+
+  const box = createNcLaymentBox(dimensions, settings.opacity);
+  ncPreviewGroup.add(box);
+
+  const motionGroups = createNcMotionLineGroups(toolpath, settings.colors);
+  Object.values(motionGroups).forEach((group) => {
+    if (group) {
+      ncPreviewGroup.add(group);
+    }
+  });
+
+  scene.add(ncPreviewGroup);
+  fitCamera(ncPreviewGroup);
+}
+
+function createNcLaymentBox(dimensions, opacity) {
+  const geometry = new THREE.BoxGeometry(dimensions.width, dimensions.thickness, dimensions.height);
+  geometry.translate(dimensions.width / 2, -dimensions.thickness / 2, dimensions.height / 2);
+
+  ncBoxMaterial = new THREE.MeshStandardMaterial({
+    color: 0x6ea978,
+    transparent: true,
+    opacity,
+    depthWrite: false,
+    roughness: 0.8,
+    metalness: 0.02
+  });
+
+  const mesh = new THREE.Mesh(geometry, ncBoxMaterial);
+  mesh.name = 'NC layment volume';
+  mesh.renderOrder = 0;
+  return mesh;
+}
+
+function createNcMotionLineGroups(toolpath, colors) {
+  const positionsByMotion = { G0: [], G1: [], G2: [], G3: [] };
+
+  toolpath.segments.forEach((segment) => {
+    const positions = positionsByMotion[segment.motion];
+    if (!positions) {
+      return;
+    }
+
+    for (let i = 1; i < segment.points.length; i += 1) {
+      const from = mapNcPointToThree(segment.points[i - 1]);
+      const to = mapNcPointToThree(segment.points[i]);
+      positions.push(from.x, from.y, from.z, to.x, to.y, to.z);
+    }
+  });
+
+  return Object.fromEntries(Object.entries(positionsByMotion).map(([motion, positions]) => {
+    if (positions.length === 0) {
+      ncLineMaterials[motion] = null;
+      return [motion, null];
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+
+    const material = new THREE.LineBasicMaterial({
+      color: colors[motion] || NC_DEFAULT_COLORS[motion],
+      depthTest: true,
+      depthWrite: false,
+      transparent: true,
+      opacity: 1,
+      toneMapped: false
+    });
+    ncLineMaterials[motion] = material;
+
+    const lines = new THREE.LineSegments(geometry, material);
+    lines.name = `NC ${motion} toolpath`;
+    lines.renderOrder = 2;
+    return [motion, lines];
+  }));
+}
+
+function mapNcPointToThree(point) {
+  // NC mapping invariant: 1 NC mm = 1 three.js unit, X -> X, Y -> Z, Z -> vertical Y (Y-up scene).
+  return new THREE.Vector3(point.x, point.z, point.y);
+}
+
+function clearNcPreview() {
+  if (!ncPreviewGroup) {
+    return;
+  }
+
+  scene.remove(ncPreviewGroup);
+  ncPreviewGroup.traverse((obj) => {
+    if (obj.isMesh || obj.isLine || obj.isLineSegments) {
+      if (obj.geometry) {
+        obj.geometry.dispose();
+      }
+      if (Array.isArray(obj.material)) {
+        obj.material.forEach(disposeMaterial);
+      } else if (obj.material) {
+        disposeMaterial(obj.material);
+      }
+    }
+  });
+
+  ncPreviewGroup = null;
+  ncBoxMaterial = null;
+  Object.keys(ncLineMaterials).forEach((motion) => {
+    ncLineMaterials[motion] = null;
+  });
+}
+
+function formatNcStatus(toolpath, prefix = '') {
+  const bbox = toolpath.bbox
+    ? `bbox: X ${formatMm(toolpath.bbox.minX)}..${formatMm(toolpath.bbox.maxX)}, Y ${formatMm(toolpath.bbox.minY)}..${formatMm(toolpath.bbox.maxY)}, Z ${formatMm(toolpath.bbox.minZ)}..${formatMm(toolpath.bbox.maxZ)}`
+    : 'bbox: n/a';
+  const warnings = toolpath.warnings.length > 0
+    ? `warnings:\n${toolpath.warnings.slice(0, 8).map((warning) => `- ${warning}`).join('\n')}${toolpath.warnings.length > 8 ? `\n...and ${toolpath.warnings.length - 8} more` : ''}`
+    : 'warnings: 0';
+  const modal = toolpath.modal
+    ? `modal: ${toolpath.modal.units}, ${toolpath.modal.positioning}, ${toolpath.modal.plane}, arc centers ${toolpath.modal.arcCenterMode}`
+    : '';
+  const lines = [
+    prefix,
+    `segments: G0=${toolpath.stats.g0}, G1=${toolpath.stats.g1}, G2=${toolpath.stats.g2}, G3=${toolpath.stats.g3}`,
+    `skipped=${toolpath.stats.skipped}, rendered points=${toolpath.renderedPoints}`,
+    bbox,
+    modal,
+    warnings
+  ].filter(Boolean);
+
+  return lines.join('\n');
+}
+
+function formatMm(value) {
+  return Number.isFinite(value) ? value.toFixed(3) : 'n/a';
+}
+
+function clampNumber(value, min, max) {
+  if (!Number.isFinite(value)) {
+    return min;
+  }
+
+  return Math.min(Math.max(value, min), max);
 }
 
 function buildPreviewUrl(relativeUrl) {
@@ -529,7 +813,7 @@ function clearCurrentModel() {
 
   scene.remove(modelGroup);
   modelGroup.traverse((obj) => {
-    if (obj.isMesh) {
+    if (obj.isMesh || obj.isLine || obj.isLineSegments) {
       if (obj.geometry) {
         obj.geometry.dispose();
       }
@@ -546,6 +830,7 @@ function clearCurrentModel() {
 
 function buildModel(geometry, visualSettings = {}, texts = []) {
   clearCurrentModel();
+  clearNcPreview();
 
   const topRegions = getTopRegions(geometry);
   const shapeBottom = contourToShape(geometry.outer, []);
@@ -660,6 +945,7 @@ function buildModel(geometry, visualSettings = {}, texts = []) {
 
 function buildStlModel(geometry) {
   clearCurrentModel();
+  clearNcPreview();
 
   geometry.computeVertexNormals();
 
