@@ -161,3 +161,61 @@ body {
 .preview-state.is-visible {
   display: block;
 }
+
+
+.section-hint {
+  margin: -4px 0 10px;
+  color: #b9c1c8;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.field {
+  display: grid;
+  gap: 4px;
+  color: #dce3e8;
+  font-size: 12px;
+}
+
+.field input {
+  min-width: 0;
+}
+
+.field-full {
+  margin-top: 10px;
+}
+
+.field-grid,
+.color-grid {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.field-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.color-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.range-field output {
+  color: #9fd2ff;
+  font-variant-numeric: tabular-nums;
+}
+
+.nc-section input[type="number"] {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.nc-section input[type="color"] {
+  width: 100%;
+  min-height: 30px;
+  padding: 1px;
+}
+
+.nc-section button {
+  margin-top: 12px;
+}

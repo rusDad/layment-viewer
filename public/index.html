@@ -24,6 +24,58 @@
           <div id="stl-status" class="status" role="status" aria-live="polite"></div>
           <div id="stl-link" class="status status-link"></div>
         </section>
+
+        <section class="upload-section nc-section">
+          <h3>NC toolpath preview</h3>
+          <p class="section-hint">Debug-визуализация G0/G1/G2/G3 поверх габаритного box.</p>
+
+          <label class="field field-full">
+            <span>.nc file</span>
+            <input id="nc-file" type="file" accept=".nc,.gcode,.tap,text/plain" />
+          </label>
+
+          <div class="field-grid">
+            <label class="field">
+              <span>width mm</span>
+              <input id="nc-width" type="number" min="0.1" step="0.1" value="565" />
+            </label>
+            <label class="field">
+              <span>height mm</span>
+              <input id="nc-height" type="number" min="0.1" step="0.1" value="375" />
+            </label>
+            <label class="field">
+              <span>thickness mm</span>
+              <input id="nc-thickness" type="number" min="0.1" step="0.1" value="35" />
+            </label>
+          </div>
+
+          <div class="color-grid" aria-label="NC motion colors">
+            <label class="field">
+              <span>G0</span>
+              <input id="nc-color-g0" type="color" value="#7fb7ff" />
+            </label>
+            <label class="field">
+              <span>G1</span>
+              <input id="nc-color-g1" type="color" value="#42d36b" />
+            </label>
+            <label class="field">
+              <span>G2</span>
+              <input id="nc-color-g2" type="color" value="#ffad33" />
+            </label>
+            <label class="field">
+              <span>G3</span>
+              <input id="nc-color-g3" type="color" value="#d45cff" />
+            </label>
+          </div>
+
+          <label class="field field-full range-field">
+            <span>box opacity <output id="nc-opacity-value">0.30</output></span>
+            <input id="nc-opacity" type="range" min="0" max="1" step="0.01" value="0.30" />
+          </label>
+
+          <button id="nc-preview">Build NC preview</button>
+          <div id="nc-status" class="status" role="status" aria-live="polite"></div>
+        </section>
       </aside>
 
       <main class="viewport">

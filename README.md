@@ -104,6 +104,23 @@ npm run dev
 - `http://localhost:3000/svg3d/?payloadKey=...` — **preview mode** (чистый customer-facing 3D preview без debug-панели).
 - `debug=1` можно использовать для принудительного debug mode даже при наличии `payloadKey`.
 
+
+## NC/G-code debug preview
+
+В debug mode (`/svg3d/`) доступен дополнительный блок **NC toolpath preview**. Он работает полностью в браузере и не добавляет backend API: можно загрузить `.nc`/`.gcode` файл, задать габариты ложемента (`width`, `height`, `thickness` в мм), построить полупрозрачный box и увидеть toolpath поверх/внутри него. Цвета движений `G0`/`G1`/`G2`/`G3` и opacity box меняются через UI без повторной загрузки файла.
+
+Поддерживаемый минимальный scope парсера:
+
+- движения `G0`/`G00`, `G1`/`G01`, `G2`/`G02`, `G3`/`G03`;
+- modal state: `G90`, `G91`, `G20`, `G21`, `G17`, `G90.1`, `G91.1`;
+- modal motion: строки с координатами без G-кода используют предыдущее активное движение;
+- дуги `G2`/`G3` поддержаны в плоскости `G17` через `I/J` и аппроксимируются polyline;
+- `R`-arcs, неизвестные команды и некорректные строки не роняют viewer, а пропускаются/попадают в warnings;
+- координаты считаются в mm, `G20` конвертирует inch → mm, если units не заданы — используется mm;
+- защитные лимиты: файл до 5 MB и до 100000 rendered points.
+
+Это не CAM-симулятор и не источник manufacturing semantics — только debug-визуализация backend-generated NC для быстрой проверки траекторий. Preview/customer-facing режимы (`/svg3d/?payloadKey=...`, `/svg3d/?stl=...`) не показывают NC controls.
+
 ## Autoload из localStorage (designer → viewer)
 
 Viewer поддерживает автозагрузку SVG через query-параметр `payloadKey`:
