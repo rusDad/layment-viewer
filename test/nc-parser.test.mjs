@@ -33,14 +33,25 @@ G21 G90 G17 G91.1
 G0 X0 Y0 Z0
 G2 X10 Y0 I5 J0
 G3 X0 Y0 I-5 J0
-G2 X20 Y0 R10
+G2 X20 Y0 R15
 `);
 
-assert.equal(arcs.stats.g2, 1);
+assert.equal(arcs.stats.g2, 2);
 assert.equal(arcs.stats.g3, 1);
-assert.equal(arcs.stats.skipped, 2, 'zero-length G0 and unsupported R arc are skipped');
-assert.ok(arcs.warnings.some((warning) => warning.includes('R arcs are not supported')));
+assert.equal(arcs.stats.skipped, 1, 'only zero-length G0 is skipped');
+assert.equal(arcs.warnings.length, 0);
+const radiusArc = arcs.segments.at(-1);
+assert.equal(radiusArc.motion, 'G2');
+assert.ok(radiusArc.points.some((point) => point.y > 1), 'positive R G2 arc should render clockwise minor arc');
 assert.ok(arcs.segments.find((segment) => segment.motion === 'G2').points.length >= 13);
+
+const majorRadiusArc = parseNcToToolpath(`
+G21 G90 G17
+G0 X0 Y0
+G3 X10 Y0 R-10
+`);
+assert.equal(majorRadiusArc.stats.g3, 1);
+assert.ok(majorRadiusArc.segments[0].points.some((point) => point.y < -15), 'negative R G3 arc should render the major arc');
 
 const absoluteCenters = parseNcToToolpath(`
 G21 G90 G90.1
