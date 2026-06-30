@@ -10,7 +10,7 @@ const ViewerMode = {
 };
 
 const TOP_SKIN_THICKNESS_MM = 4;
-const TOP_LAYER_COLOR = 0x4a4a4a;
+const TOP_LAYER_COLOR = 0x6ea978; // 0x4a4a4a temp green 
 const EVA_GREEN_COLOR = 0x6ea978;
 const EVA_BLUE_COLOR = 0x5f7892;
 const MATERIAL_METALNESS = 0.012;
