@@ -459,7 +459,7 @@ function buildNcPreview(toolpath, dimensions) {
   const box = createNcLaymentBox(dimensions, settings.opacity);
   ncPreviewGroup.add(box);
 
-  const motionGroups = createNcMotionLineGroups(toolpath, settings.colors);
+  const motionGroups = createNcMotionLineGroups(toolpath, dimensions, settings.colors);
   Object.values(motionGroups).forEach((group) => {
     if (group) {
       ncPreviewGroup.add(group);
@@ -489,7 +489,7 @@ function createNcLaymentBox(dimensions, opacity) {
   return mesh;
 }
 
-function createNcMotionLineGroups(toolpath, colors) {
+function createNcMotionLineGroups(toolpath, dimensions, colors) {
   const positionsByMotion = { G0: [], G1: [], G2: [], G3: [] };
 
   toolpath.segments.forEach((segment) => {
@@ -499,8 +499,8 @@ function createNcMotionLineGroups(toolpath, colors) {
     }
 
     for (let i = 1; i < segment.points.length; i += 1) {
-      const from = mapNcPointToThree(segment.points[i - 1]);
-      const to = mapNcPointToThree(segment.points[i]);
+      const from = mapNcPointToThree(segment.points[i - 1], dimensions);
+      const to = mapNcPointToThree(segment.points[i], dimensions);
       positions.push(from.x, from.y, from.z, to.x, to.y, to.z);
     }
   });
@@ -533,9 +533,13 @@ function createNcMotionLineGroups(toolpath, colors) {
   }));
 }
 
-function mapNcPointToThree(point) {
-  // NC mapping invariant: 1 NC mm = 1 three.js unit, X -> X, Y -> Z, Z -> vertical Y (Y-up scene).
-  return new THREE.Vector3(point.x, point.z, point.y);
+function mapNcPointToThree(point, dimensions) {
+  // NC preview uses the layment box coordinate frame: the box spans X 0..width,
+  // Z 0..height, and vertical Y -thickness..0.  The NC source coordinates are
+  // already parsed in machine/world units, so only the visual X axis is flipped
+  // at render time to match the viewer's screen-space convention without changing G-code
+  // semantics, Y-depth placement, or the box geometry.
+  return new THREE.Vector3(dimensions.width - point.x, point.z, point.y);
 }
 
 function clearNcPreview() {
