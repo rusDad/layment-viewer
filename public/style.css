@@ -324,6 +324,14 @@ body {
   white-space: pre;
 }
 
+.nc-source-row.has-segment {
+  cursor: pointer;
+}
+
+.nc-source-row.no-segment {
+  cursor: default;
+}
+
 .nc-source-row.has-segment .nc-source-row-number {
   color: #9fd2ff;
 }
@@ -347,4 +355,33 @@ body {
   padding-right: 10px;
   color: inherit;
   text-overflow: ellipsis;
+}
+
+.nc-source-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.nc-source-title-row h4 {
+  margin: 0;
+}
+
+.nc-source-focus {
+  padding: 4px 8px;
+  border: 1px solid rgba(92, 225, 255, 0.5);
+  border-radius: 6px;
+  background: rgba(92, 225, 255, 0.12);
+  color: #e9fbff;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.nc-source-focus:disabled {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: #7d8993;
+  cursor: not-allowed;
 }

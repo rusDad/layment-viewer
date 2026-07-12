@@ -151,14 +151,27 @@ assert.equal(renderBatches.G2.positions.length, renderBatches.G2.renderSegmentRe
 const { NcSelectionController } = await import('../public/nc/NcSelectionController.js');
 const hoverChanges = [];
 const selectionChanges = [];
+const sourceLineChanges = [];
 const selectionController = new NcSelectionController({
   onHoverChange: (segmentId) => hoverChanges.push(segmentId),
-  onSelectionChange: (segmentId) => selectionChanges.push(segmentId)
+  onSelectionChange: (segmentId) => selectionChanges.push(segmentId),
+  onSourceLineChange: (lineNumber, line, segmentId) => sourceLineChanges.push({ lineNumber, line, segmentId }),
+  getSourceLineByNumber: (lineNumber) => ({
+    4: { index: 3, number: 4, text: 'G1 X10', segmentIds: [7] },
+    5: { index: 4, number: 5, text: 'M3 S12000', segmentIds: [] }
+  }[lineNumber] ?? null)
 });
-selectionController.setSelectedSegmentId(7);
+selectionController.selectSegment(7);
 selectionController.setHoveredSegmentId(12);
 assert.equal(selectionController.selectedSegmentId, 7, 'hover should not clear an existing selected segment');
 selectionController.clearHover();
 assert.equal(selectionController.selectedSegmentId, 7, 'clearing hover should not clear selection');
+selectionController.selectSourceLine(4);
+assert.equal(selectionController.selectedSegmentId, 7, 'source line with motion should select its logical segment');
+selectionController.selectSourceLine(5);
+assert.equal(selectionController.selectedSegmentId, null, 'source line without motion should not select geometry');
+assert.equal(selectionController.selectedSourceLineNumber, 5);
+selectionController.clearSelection();
 assert.deepEqual(hoverChanges, [12, null]);
-assert.deepEqual(selectionChanges, [7]);
+assert.deepEqual(selectionChanges, [7, 7, null, null]);
+assert.deepEqual(sourceLineChanges.map((change) => [change.lineNumber, change.segmentId]), [[4, 7], [5, null], [null, null]]);
