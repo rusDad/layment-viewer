@@ -43,6 +43,7 @@ export function createNcPreview(ctx) {
     },
     onSelectionChange: (segmentId) => {
       ncScene.setSelectionHighlight(segmentId);
+      ncUi.showSourceSelection(getActiveSegment(segmentId));
     }
   });
   const ncPicking = new NcPickingController({
@@ -102,6 +103,7 @@ export function createNcPreview(ctx) {
     ncPicking.clearPickableLineBatches();
     selection.clearAll();
     activeToolpath = toolpath;
+    ncUi.setSourceDocument(toolpath.lines);
     const previewResult = ncScene.buildNcPreview(toolpath, dimensions, ncUi.getNcVisualSettings());
     ncPicking.setPickableLineBatches(previewResult.motionLineBatches);
     ncUi.setNcStatus(formatNcStatus(toolpath));
@@ -127,12 +129,14 @@ export function createNcPreview(ctx) {
     clearNcPreview: () => {
       ncPicking.clearPickableLineBatches();
       selection.clearAll();
+      ncUi.clearSourceSelection();
       activeToolpath = null;
       ncScene.clearNcPreview();
     },
     dispose: () => {
       ncPicking.dispose();
       selection.clearAll();
+      ncUi.dispose();
       activeToolpath = null;
       ncScene.clearNcPreview();
     }

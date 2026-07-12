@@ -265,3 +265,86 @@ body {
 .nc-inspector-meta dd {
   margin: 0;
 }
+
+.nc-source-panel {
+  margin-top: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  overflow: hidden;
+}
+
+.nc-source-panel-header {
+  padding: 10px 10px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.nc-source-panel-header h4 {
+  margin: 0 0 8px;
+  color: #eef6ff;
+  font-size: 13px;
+}
+
+.nc-source-detail {
+  color: #dfe9f2;
+  font-size: 12px;
+}
+
+.nc-source-detail-title {
+  margin-bottom: 6px;
+  color: #5ce1ff;
+  font-weight: 700;
+}
+
+.nc-source-list {
+  position: relative;
+  height: 280px;
+  overflow: auto;
+  background: rgba(0, 0, 0, 0.18);
+  font: 12px/24px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.nc-source-spacer {
+  position: relative;
+  min-width: max-content;
+}
+
+.nc-source-window {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
+.nc-source-row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  height: 24px;
+  color: #cbd6df;
+  white-space: pre;
+}
+
+.nc-source-row.has-segment .nc-source-row-number {
+  color: #9fd2ff;
+}
+
+.nc-source-row.is-selected {
+  background: rgba(92, 225, 255, 0.2);
+  color: #ffffff;
+  outline: 1px solid rgba(92, 225, 255, 0.55);
+  outline-offset: -1px;
+}
+
+.nc-source-row-number {
+  padding: 0 8px;
+  color: #7d8993;
+  text-align: right;
+  user-select: none;
+}
+
+.nc-source-row-text {
+  overflow: hidden;
+  padding-right: 10px;
+  color: inherit;
+  text-overflow: ellipsis;
+}
