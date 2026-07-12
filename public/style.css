@@ -222,7 +222,7 @@ body {
 
 .nc-hover-inspector {
   position: absolute;
-  top: 16px;
+  bottom: 16px;
   right: 16px;
   z-index: 3;
   width: min(320px, calc(100vw - 360px));
