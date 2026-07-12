@@ -13,19 +13,43 @@ export function buildNcMotionRenderBatches(toolpath, dimensions, mapPointToThree
       return;
     }
 
-    for (let i = 1; i < segment.points.length; i += 1) {
-      const from = mapPointToThree(segment.points[i - 1], dimensions);
-      const to = mapPointToThree(segment.points[i], dimensions);
-      batch.positions.push(from.x, from.y, from.z, to.x, to.y, to.z);
-      batch.renderSegmentRefs.push({
-        logicalSegmentId: segment.id,
-        segmentId: segment.id,
-        sourceLineNumber: segment.sourceLineNumber,
-        polylinePartIndex: i - 1,
-        partIndex: i - 1
-      });
-    }
+    appendSegmentToBatch(batch, segment, dimensions, mapPointToThree);
   });
 
   return batches;
+}
+
+export function buildNcColoredRenderBatch(toolpath, dimensions, mapPointToThree, colorContext, getSegmentColor) {
+  const batch = { positions: [], colors: [], renderSegmentRefs: [] };
+
+  toolpath.segments.forEach((segment) => {
+    appendSegmentToBatch(batch, segment, dimensions, mapPointToThree, getSegmentColor(segment, colorContext));
+  });
+
+  return batch;
+}
+
+function appendSegmentToBatch(batch, segment, dimensions, mapPointToThree, color = null) {
+  for (let i = 1; i < segment.points.length; i += 1) {
+    const from = mapPointToThree(segment.points[i - 1], dimensions);
+    const to = mapPointToThree(segment.points[i], dimensions);
+    batch.positions.push(from.x, from.y, from.z, to.x, to.y, to.z);
+    if (color) {
+      const rgb = hexToRgb(color);
+      batch.colors.push(rgb.r, rgb.g, rgb.b, rgb.r, rgb.g, rgb.b);
+    }
+    batch.renderSegmentRefs.push({
+      logicalSegmentId: segment.id,
+      segmentId: segment.id,
+      sourceLineNumber: segment.sourceLineNumber,
+      polylinePartIndex: i - 1,
+      partIndex: i - 1
+    });
+  }
+}
+
+function hexToRgb(hex) {
+  const normalized = String(hex || '#ffffff').replace('#', '');
+  const value = Number.parseInt(normalized.length === 3 ? normalized.split('').map((char) => char + char).join('') : normalized, 16);
+  return { r: ((value >> 16) & 255) / 255, g: ((value >> 8) & 255) / 255, b: (value & 255) / 255 };
 }

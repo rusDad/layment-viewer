@@ -18,6 +18,7 @@ export class NcPreview {
   init() {
     this.ctx.ncPreviewButton?.addEventListener('click', this.buildNcPreviewFromUi);
     this.ctx.ncOpacityInput?.addEventListener('input', this.updateNcVisualSettings);
+    this.ctx.ncColorStrategySelect?.addEventListener('change', this.updateNcVisualSettings);
     Object.values(this.ctx.ncColorInputs).forEach((input) => input?.addEventListener('input', this.updateNcVisualSettings));
     this.preview.init();
     this.updateNcOpacityLabel();
@@ -26,6 +27,7 @@ export class NcPreview {
   dispose() {
     this.ctx.ncPreviewButton?.removeEventListener('click', this.buildNcPreviewFromUi);
     this.ctx.ncOpacityInput?.removeEventListener('input', this.updateNcVisualSettings);
+    this.ctx.ncColorStrategySelect?.removeEventListener('change', this.updateNcVisualSettings);
     Object.values(this.ctx.ncColorInputs).forEach((input) => input?.removeEventListener('input', this.updateNcVisualSettings));
     this.preview.dispose();
   }
@@ -117,6 +119,7 @@ export function createNcPreview(ctx) {
     ncUi.setSourceDocument(toolpath.lines);
     const previewResult = ncScene.buildNcPreview(toolpath, dimensions, ncUi.getNcVisualSettings());
     ncPicking.setPickableLineBatches(previewResult.motionLineBatches);
+    ncUi.renderColorLegend(previewResult.colorLegend);
     ncUi.setNcStatus(formatNcStatus(toolpath));
   }
 
@@ -152,7 +155,11 @@ export function createNcPreview(ctx) {
 
   function updateNcVisualSettings() {
     ncUi.updateNcOpacityLabel();
-    ncScene.updateVisualSettings(ncUi.getNcVisualSettings());
+    const result = ncScene.updateVisualSettings(ncUi.getNcVisualSettings());
+    if (result?.lineBatches) {
+      ncPicking.setPickableLineBatches(result.lineBatches);
+    }
+    ncUi.renderColorLegend(result?.colorLegend ?? null);
   }
 
   return {
@@ -168,6 +175,7 @@ export function createNcPreview(ctx) {
       ncPicking.clearPickableLineBatches();
       selection.clearAll();
       ncUi.clearSourceSelection();
+      ncUi.renderColorLegend(null);
       activeToolpath = null;
       ncScene.clearNcPreview();
     },

@@ -385,3 +385,33 @@ body {
   color: #7d8993;
   cursor: not-allowed;
 }
+
+.nc-color-legend {
+  margin-top: 8px;
+  color: #dce3e8;
+  font-size: 12px;
+}
+
+.nc-color-legend-title {
+  color: #9fd2ff;
+  margin-bottom: 6px;
+}
+
+.nc-color-legend-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+.nc-color-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.nc-color-legend-swatch {
+  width: 11px;
+  height: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 50%;
+}

@@ -32,6 +32,8 @@ const ncHeightInput = document.getElementById('nc-height');
 const ncThicknessInput = document.getElementById('nc-thickness');
 const ncOpacityInput = document.getElementById('nc-opacity');
 const ncOpacityValueEl = document.getElementById('nc-opacity-value');
+const ncColorStrategySelect = document.getElementById('nc-color-strategy');
+const ncColorLegendEl = document.getElementById('nc-color-legend');
 const ncColorInputs = {
   G0: document.getElementById('nc-color-g0'),
   G1: document.getElementById('nc-color-g1'),
@@ -78,6 +80,8 @@ const sharedContext = {
   ncThicknessInput,
   ncOpacityInput,
   ncOpacityValueEl,
+  ncColorStrategySelect,
+  ncColorLegendEl,
   ncColorInputs,
   setLoadingState,
   setErrorState,
