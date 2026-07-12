@@ -1,5 +1,6 @@
 import { NC_MAX_FILE_BYTES, parseNcToToolpath } from './nc-parser.mjs';
 import { createNcScene } from './NcScene.js';
+import { NcPickingController } from './NcPickingController.js';
 import { createNcUi, formatNcStatus } from './NcUi.js';
 
 
@@ -17,6 +18,7 @@ export class NcPreview {
     this.ctx.ncPreviewButton?.addEventListener('click', this.buildNcPreviewFromUi);
     this.ctx.ncOpacityInput?.addEventListener('input', this.updateNcVisualSettings);
     Object.values(this.ctx.ncColorInputs).forEach((input) => input?.addEventListener('input', this.updateNcVisualSettings));
+    this.preview.init();
     this.updateNcOpacityLabel();
   }
 
@@ -24,7 +26,7 @@ export class NcPreview {
     this.ctx.ncPreviewButton?.removeEventListener('click', this.buildNcPreviewFromUi);
     this.ctx.ncOpacityInput?.removeEventListener('input', this.updateNcVisualSettings);
     Object.values(this.ctx.ncColorInputs).forEach((input) => input?.removeEventListener('input', this.updateNcVisualSettings));
-    this.clearNcPreview();
+    this.preview.dispose();
   }
 }
 
@@ -32,6 +34,7 @@ export function createNcPreview(ctx) {
   const { viewerMode, isPreviewMode, ncFileInput } = ctx;
   const ncScene = createNcScene(ctx);
   const ncUi = createNcUi(ctx);
+  const ncPicking = new NcPickingController(ctx);
 
   async function buildNcPreviewFromUi() {
     if (isPreviewMode(viewerMode)) {
@@ -81,7 +84,8 @@ export function createNcPreview(ctx) {
       return;
     }
 
-    ncScene.buildNcPreview(toolpath, dimensions, ncUi.getNcVisualSettings());
+    const previewResult = ncScene.buildNcPreview(toolpath, dimensions, ncUi.getNcVisualSettings());
+    ncPicking.setPickableLineBatches(previewResult.motionLineBatches);
     ncUi.setNcStatus(formatNcStatus(toolpath));
   }
 
@@ -91,9 +95,17 @@ export function createNcPreview(ctx) {
   }
 
   return {
+    init: () => ncPicking.init(),
     buildNcPreviewFromUi,
     updateNcVisualSettings,
     updateNcOpacityLabel: ncUi.updateNcOpacityLabel,
-    clearNcPreview: ncScene.clearNcPreview
+    clearNcPreview: () => {
+      ncPicking.clearPickableLineBatches();
+      ncScene.clearNcPreview();
+    },
+    dispose: () => {
+      ncPicking.dispose();
+      ncScene.clearNcPreview();
+    }
   };
 }
