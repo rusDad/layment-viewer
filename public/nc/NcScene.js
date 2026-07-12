@@ -122,7 +122,7 @@ export function createNcScene(ctx) {
   }
 
   function setSelectionHighlight(segmentId) {
-    selectionHighlight = replaceSegmentHighlight(selectionHighlight, segmentId, 0x5ce1ff, 'NC selection highlight', 5);
+    selectionHighlight = replaceSegmentHighlight(selectionHighlight, segmentId, 0xff4444, 'NC selection highlight', 5);
   }
 
   function focusSelectedSegment() {
