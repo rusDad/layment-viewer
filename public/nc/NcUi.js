@@ -16,6 +16,8 @@ export function createNcUi(ctx) {
     ncThicknessInput,
     ncOpacityInput,
     ncOpacityValueEl,
+    ncColorStrategySelect,
+    ncColorLegendEl,
     ncColorInputs,
     onSourceLineSelect,
     onFocusSelectedSegment
@@ -51,6 +53,7 @@ export function createNcUi(ctx) {
   function getNcVisualSettings() {
     return {
       opacity: clampNumber(Number(ncOpacityInput?.value ?? 0.3), 0, 1),
+      colorStrategy: ncColorStrategySelect?.value || 'motion',
       colors: {
         G0: ncColorInputs.G0?.value || NC_DEFAULT_COLORS.G0,
         G1: ncColorInputs.G1?.value || NC_DEFAULT_COLORS.G1,
@@ -68,6 +71,29 @@ export function createNcUi(ctx) {
 
   function showHoverInspector(segment) {
     renderInspector(ncHoverInspectorEl, segment);
+  }
+
+  function renderColorLegend(legend) {
+    if (!ncColorLegendEl) return;
+    ncColorLegendEl.innerHTML = '';
+    if (!legend) return;
+    const title = document.createElement('div');
+    title.className = 'nc-color-legend-title';
+    title.textContent = legend.summary ? `${legend.title}: ${legend.summary}` : legend.title;
+    const items = document.createElement('div');
+    items.className = 'nc-color-legend-items';
+    legend.items.forEach((item) => {
+      const row = document.createElement('span');
+      row.className = 'nc-color-legend-item';
+      const swatch = document.createElement('span');
+      swatch.className = 'nc-color-legend-swatch';
+      swatch.style.backgroundColor = item.color;
+      const label = document.createElement('span');
+      label.textContent = item.label;
+      row.append(swatch, label);
+      items.append(row);
+    });
+    ncColorLegendEl.append(title, items);
   }
 
   function setSourceDocument(lines) {
@@ -206,6 +232,7 @@ export function createNcUi(ctx) {
     appendInspectorRow(meta, 'Feed', formatNullable(segment.feed, ' mm/min'));
     appendInspectorRow(meta, 'Tool', segment.tool == null ? 'n/a' : `T${formatNumber(segment.tool)}`);
     appendInspectorRow(meta, 'Spindle', formatNullable(segment.spindle));
+    appendDepthTransition(meta, segment);
     ncSourceDetailEl.append(title, meta);
   }
 
@@ -272,6 +299,7 @@ export function createNcUi(ctx) {
     getNcVisualSettings,
     updateNcOpacityLabel,
     showHoverInspector,
+    renderColorLegend,
     setSourceDocument,
     showSourceSelection,
     showSourceLineSelection,
@@ -329,6 +357,7 @@ function renderInspector(container, segment) {
   appendInspectorRow(meta, 'Feed', formatNullable(segment.feed, ' mm/min'));
   appendInspectorRow(meta, 'Tool', segment.tool == null ? 'n/a' : `T${formatNumber(segment.tool)}`);
   appendInspectorRow(meta, 'Spindle', formatNullable(segment.spindle));
+  appendDepthTransition(meta, segment);
 
   container.append(line, source, meta);
 }
@@ -364,4 +393,9 @@ function formatNullable(value, suffix = '') {
 
 function formatNumber(value) {
   return Number.isFinite(value) ? Number(value.toFixed(3)).toString() : 'n/a';
+}
+
+function appendDepthTransition(meta, segment) {
+  if (!segment?.start || !segment?.end || segment.start.z === segment.end.z) return;
+  appendInspectorRow(meta, 'Z start → end', `${formatNumber(segment.start.z)} → ${formatNumber(segment.end.z)}`);
 }

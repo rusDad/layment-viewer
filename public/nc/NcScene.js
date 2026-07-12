@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { buildNcMotionRenderBatches } from './NcRenderIndex.js';
+import { buildNcColoredRenderBatch } from './NcRenderIndex.js';
+import { buildNcColorContext, getNcColorLegend, getSegmentColor } from './NcColorStrategies.js';
 
 export const NC_DEFAULT_COLORS = { G0: '#7fb7ff', G1: '#42d36b', G2: '#ffad33', G3: '#d45cff' };
 
@@ -11,7 +12,8 @@ export function createNcScene(ctx) {
   let activeDimensions = null;
   let hoverHighlight = null;
   let selectionHighlight = null;
-  const ncLineMaterials = { G0: null, G1: null, G2: null, G3: null };
+  const ncLineMaterials = [];
+  let activeLineBatches = [];
 
   function buildNcPreview(toolpath, dimensions, settings) {
     clearCurrentModel();
@@ -26,14 +28,11 @@ export function createNcScene(ctx) {
     activeToolpath = toolpath;
     activeDimensions = dimensions;
 
-    const motionLineBatches = createNcMotionLineGroups(toolpath, dimensions, settings.colors);
-    motionLineBatches.forEach((batch) => {
-      ncPreviewGroup.add(batch.object);
-    });
+    const lineResult = replaceNcToolpathLines(settings);
 
     scene.add(ncPreviewGroup);
     fitCamera(ncPreviewGroup);
-    return { group: ncPreviewGroup, motionLineBatches };
+    return { group: ncPreviewGroup, motionLineBatches: lineResult.lineBatches, colorLegend: lineResult.colorLegend };
   }
 
   function updateVisualSettings(settings) {
@@ -42,12 +41,11 @@ export function createNcScene(ctx) {
       ncBoxMaterial.needsUpdate = true;
     }
 
-    Object.entries(ncLineMaterials).forEach(([motion, material]) => {
-      if (material) {
-        material.color.set(settings.colors[motion]);
-        material.needsUpdate = true;
-      }
-    });
+    if (activeToolpath && activeDimensions && ncPreviewGroup) {
+      return replaceNcToolpathLines(settings);
+    }
+
+    return { lineBatches: activeLineBatches, colorLegend: null };
   }
 
   function createNcLaymentBox(dimensions, opacity) {
@@ -69,37 +67,54 @@ export function createNcScene(ctx) {
     return mesh;
   }
 
-  function createNcMotionLineGroups(toolpath, dimensions, colors) {
-    const renderBatches = buildNcMotionRenderBatches(toolpath, dimensions, mapNcPointToThree);
-
-    return Object.entries(renderBatches).flatMap(([motion, batch]) => {
-      if (batch.positions.length === 0) {
-        ncLineMaterials[motion] = null;
-        return [];
+  function replaceNcToolpathLines(settings) {
+    activeLineBatches.forEach((batch) => {
+      ncPreviewGroup?.remove(batch.object);
+      batch.object.geometry?.dispose();
+      if (Array.isArray(batch.object.material)) {
+        batch.object.material.forEach(disposeMaterial);
+      } else if (batch.object.material) {
+        disposeMaterial(batch.object.material);
       }
-
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute('position', new THREE.Float32BufferAttribute(batch.positions, 3));
-      geometry.computeBoundingBox();
-      geometry.computeBoundingSphere();
-
-      const material = new THREE.LineBasicMaterial({
-        color: colors[motion] || NC_DEFAULT_COLORS[motion],
-        depthTest: true,
-        depthWrite: false,
-        transparent: true,
-        opacity: 1,
-        toneMapped: false
-      });
-      ncLineMaterials[motion] = material;
-
-      const lines = new THREE.LineSegments(geometry, material);
-      lines.name = `NC ${motion} toolpath`;
-      lines.renderOrder = 2;
-      lines.userData.ncMotion = motion;
-      lines.userData.ncRenderSegmentRefs = batch.renderSegmentRefs;
-      return [{ motion, object: lines, renderSegmentRefs: batch.renderSegmentRefs }];
     });
+    activeLineBatches = [];
+    ncLineMaterials.splice(0, ncLineMaterials.length);
+
+    if (!activeToolpath || !activeDimensions || !ncPreviewGroup) {
+      return { lineBatches: [], colorLegend: null };
+    }
+
+    const colorContext = buildNcColorContext(activeToolpath, settings, NC_DEFAULT_COLORS);
+    const batch = buildNcColoredRenderBatch(activeToolpath, activeDimensions, mapNcPointToThree, colorContext, getSegmentColor);
+    if (batch.positions.length === 0) {
+      return { lineBatches: [], colorLegend: getNcColorLegend(colorContext) };
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(batch.positions, 3));
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(batch.colors, 3));
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+
+    const material = new THREE.LineBasicMaterial({
+      vertexColors: true,
+      depthTest: true,
+      depthWrite: false,
+      transparent: true,
+      opacity: 1,
+      toneMapped: false
+    });
+    ncLineMaterials.push(material);
+
+    const lines = new THREE.LineSegments(geometry, material);
+    lines.name = `NC ${colorContext.colorStrategy} toolpath`;
+    lines.renderOrder = 2;
+    lines.userData.ncColorStrategy = colorContext.colorStrategy;
+    lines.userData.ncRenderSegmentRefs = batch.renderSegmentRefs;
+    ncPreviewGroup.add(lines);
+
+    activeLineBatches = [{ motion: 'colored', object: lines, renderSegmentRefs: batch.renderSegmentRefs }];
+    return { lineBatches: activeLineBatches, colorLegend: getNcColorLegend(colorContext) };
   }
 
   function setHoverHighlight(segmentId) {
@@ -192,9 +207,8 @@ export function createNcScene(ctx) {
     ncBoxMaterial = null;
     activeToolpath = null;
     activeDimensions = null;
-    Object.keys(ncLineMaterials).forEach((motion) => {
-      ncLineMaterials[motion] = null;
-    });
+    ncLineMaterials.splice(0, ncLineMaterials.length);
+    activeLineBatches = [];
   }
 
   return { buildNcPreview, updateVisualSettings, setHoverHighlight, setSelectionHighlight, focusSelectedSegment, clearNcPreview };
