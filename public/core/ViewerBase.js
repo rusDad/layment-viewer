@@ -23,10 +23,14 @@ export class ViewerBase {
     this.fitCamera = this.fitCamera.bind(this);
   }
 
-  start() {
+  init() {
     window.addEventListener('resize', this.resize);
     this.resize();
     this.animate();
+  }
+
+  start() {
+    this.init();
   }
 
   resize() {

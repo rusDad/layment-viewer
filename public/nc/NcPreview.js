@@ -2,6 +2,32 @@ import { NC_MAX_FILE_BYTES, parseNcToToolpath } from './nc-parser.mjs';
 import { createNcScene } from './NcScene.js';
 import { createNcUi, formatNcStatus } from './NcUi.js';
 
+
+export class NcPreview {
+  constructor(ctx) {
+    this.ctx = ctx;
+    this.preview = createNcPreview(ctx);
+    this.buildNcPreviewFromUi = this.preview.buildNcPreviewFromUi;
+    this.updateNcVisualSettings = this.preview.updateNcVisualSettings;
+    this.updateNcOpacityLabel = this.preview.updateNcOpacityLabel;
+    this.clearNcPreview = this.preview.clearNcPreview;
+  }
+
+  init() {
+    this.ctx.ncPreviewButton?.addEventListener('click', this.buildNcPreviewFromUi);
+    this.ctx.ncOpacityInput?.addEventListener('input', this.updateNcVisualSettings);
+    Object.values(this.ctx.ncColorInputs).forEach((input) => input?.addEventListener('input', this.updateNcVisualSettings));
+    this.updateNcOpacityLabel();
+  }
+
+  dispose() {
+    this.ctx.ncPreviewButton?.removeEventListener('click', this.buildNcPreviewFromUi);
+    this.ctx.ncOpacityInput?.removeEventListener('input', this.updateNcVisualSettings);
+    Object.values(this.ctx.ncColorInputs).forEach((input) => input?.removeEventListener('input', this.updateNcVisualSettings));
+    this.clearNcPreview();
+  }
+}
+
 export function createNcPreview(ctx) {
   const { viewerMode, isPreviewMode, ncFileInput } = ctx;
   const ncScene = createNcScene(ctx);

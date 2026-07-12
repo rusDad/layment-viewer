@@ -1,6 +1,30 @@
 import * as THREE from 'three';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 
+
+export class StlViewer {
+  constructor(ctx) {
+    this.ctx = ctx;
+    this.viewer = createStlViewer(ctx);
+    this.uploadStl = this.viewer.uploadStl;
+    this.initAutoloadFromStlId = this.viewer.initAutoloadFromStlId;
+  }
+
+  init() {
+    this.ctx.stlUploadButton?.addEventListener('click', this.uploadStl);
+
+    if (this.ctx.isPreviewMode(this.ctx.viewerMode) && this.ctx.stlId) {
+      this.initAutoloadFromStlId(this.ctx.stlId);
+    }
+  }
+
+  dispose() {
+    this.ctx.stlUploadButton?.removeEventListener('click', this.uploadStl);
+    this.ctx.clearCurrentModel();
+    this.ctx.clearNcPreview();
+  }
+}
+
 const STL_TOP_FACE_DOT_THRESHOLD = 0.6;
 const STL_TOP_FACE_HEIGHT_EPS_MM = 0.2;
 const STL_LOCAL_TOP_NORMAL = new THREE.Vector3(0, 0, 1);
