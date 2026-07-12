@@ -1,7 +1,7 @@
 import { NC_DEFAULT_COLORS } from './NcScene.js';
 
 export function createNcUi(ctx) {
-  const { ncStatusEl, ncWidthInput, ncHeightInput, ncThicknessInput, ncOpacityInput, ncOpacityValueEl, ncColorInputs } = ctx;
+  const { ncStatusEl, ncHoverInspectorEl, ncWidthInput, ncHeightInput, ncThicknessInput, ncOpacityInput, ncOpacityValueEl, ncColorInputs } = ctx;
 
   function setNcStatus(message, isError = false) {
     if (!ncStatusEl) {
@@ -43,7 +43,38 @@ export function createNcUi(ctx) {
     }
   }
 
-  return { setNcStatus, getNcDimensionsFromUi, getNcVisualSettings, updateNcOpacityLabel };
+  function showHoverInspector(segment) {
+    if (!ncHoverInspectorEl) return;
+    if (!segment) {
+      ncHoverInspectorEl.hidden = true;
+      ncHoverInspectorEl.innerHTML = '';
+      return;
+    }
+
+    ncHoverInspectorEl.hidden = false;
+    ncHoverInspectorEl.innerHTML = '';
+
+    const line = document.createElement('div');
+    line.className = 'nc-inspector-line';
+    line.textContent = `Line ${segment.sourceLineNumber ?? 'n/a'}`;
+
+    const source = document.createElement('pre');
+    source.className = 'nc-inspector-source';
+    source.textContent = segment.sourceText || '';
+
+    const meta = document.createElement('dl');
+    meta.className = 'nc-inspector-meta';
+    appendInspectorRow(meta, 'Motion', segment.motion);
+    appendInspectorRow(meta, 'From', formatNcPoint(segment.start));
+    appendInspectorRow(meta, 'To', formatNcPoint(segment.end));
+    appendInspectorRow(meta, 'Feed', formatNullable(segment.feed, ' mm/min'));
+    appendInspectorRow(meta, 'Tool', segment.tool == null ? 'n/a' : `T${formatNumber(segment.tool)}`);
+    appendInspectorRow(meta, 'Spindle', formatNullable(segment.spindle));
+
+    ncHoverInspectorEl.append(line, source, meta);
+  }
+
+  return { setNcStatus, getNcDimensionsFromUi, getNcVisualSettings, updateNcOpacityLabel, showHoverInspector };
 }
 
 export function formatNcStatus(toolpath, prefix = '') {
@@ -78,4 +109,25 @@ function clampNumber(value, min, max) {
   }
 
   return Math.min(Math.max(value, min), max);
+}
+
+function appendInspectorRow(list, label, value) {
+  const term = document.createElement('dt');
+  term.textContent = `${label}:`;
+  const description = document.createElement('dd');
+  description.textContent = value ?? 'n/a';
+  list.append(term, description);
+}
+
+function formatNcPoint(point) {
+  if (!point) return 'n/a';
+  return `X${formatNumber(point.x)} Y${formatNumber(point.y)} Z${formatNumber(point.z)}`;
+}
+
+function formatNullable(value, suffix = '') {
+  return value == null ? 'n/a' : `${formatNumber(value)}${suffix}`;
+}
+
+function formatNumber(value) {
+  return Number.isFinite(value) ? Number(value.toFixed(3)).toString() : 'n/a';
 }

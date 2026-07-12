@@ -7,6 +7,10 @@ export function createNcScene(ctx) {
   const { scene, clearCurrentModel, disposeMaterial, fitCamera } = ctx;
   let ncPreviewGroup = null;
   let ncBoxMaterial = null;
+  let activeToolpath = null;
+  let activeDimensions = null;
+  let hoverHighlight = null;
+  let selectionHighlight = null;
   const ncLineMaterials = { G0: null, G1: null, G2: null, G3: null };
 
   function buildNcPreview(toolpath, dimensions, settings) {
@@ -18,6 +22,9 @@ export function createNcScene(ctx) {
 
     const box = createNcLaymentBox(dimensions, settings.opacity);
     ncPreviewGroup.add(box);
+
+    activeToolpath = toolpath;
+    activeDimensions = dimensions;
 
     const motionLineBatches = createNcMotionLineGroups(toolpath, dimensions, settings.colors);
     motionLineBatches.forEach((batch) => {
@@ -95,11 +102,72 @@ export function createNcScene(ctx) {
     });
   }
 
+  function setHoverHighlight(segmentId) {
+    hoverHighlight = replaceSegmentHighlight(hoverHighlight, segmentId, 0xfff176, 'NC hover highlight', 4);
+  }
+
+  function setSelectionHighlight(segmentId) {
+    selectionHighlight = replaceSegmentHighlight(selectionHighlight, segmentId, 0x5ce1ff, 'NC selection highlight', 5);
+  }
+
+  function replaceSegmentHighlight(current, segmentId, color, name, renderOrder) {
+    disposeHighlight(current);
+    if (!Number.isInteger(segmentId) || !activeToolpath || !activeDimensions || !ncPreviewGroup) {
+      return null;
+    }
+
+    const segment = activeToolpath.segments.find((candidate) => candidate.id === segmentId);
+    if (!segment || segment.points.length < 2) {
+      return null;
+    }
+
+    const positions = [];
+    for (let i = 1; i < segment.points.length; i += 1) {
+      const from = mapNcPointToThree(segment.points[i - 1], activeDimensions);
+      const to = mapNcPointToThree(segment.points[i], activeDimensions);
+      positions.push(from.x, from.y, from.z, to.x, to.y, to.z);
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.computeBoundingSphere();
+
+    const material = new THREE.LineBasicMaterial({
+      color,
+      depthTest: false,
+      depthWrite: false,
+      transparent: true,
+      opacity: 1,
+      toneMapped: false
+    });
+
+    const lines = new THREE.LineSegments(geometry, material);
+    lines.name = name;
+    lines.renderOrder = renderOrder;
+    ncPreviewGroup.add(lines);
+    return lines;
+  }
+
+  function disposeHighlight(highlight) {
+    if (!highlight) return;
+    ncPreviewGroup?.remove(highlight);
+    highlight.geometry?.dispose();
+    if (Array.isArray(highlight.material)) {
+      highlight.material.forEach(disposeMaterial);
+    } else if (highlight.material) {
+      disposeMaterial(highlight.material);
+    }
+  }
+
   function clearNcPreview() {
     if (!ncPreviewGroup) {
       return;
     }
 
+    disposeHighlight(hoverHighlight);
+    disposeHighlight(selectionHighlight);
+    hoverHighlight = null;
+    selectionHighlight = null;
     scene.remove(ncPreviewGroup);
     ncPreviewGroup.traverse((obj) => {
       if (obj.isMesh || obj.isLine || obj.isLineSegments) {
@@ -116,12 +184,14 @@ export function createNcScene(ctx) {
 
     ncPreviewGroup = null;
     ncBoxMaterial = null;
+    activeToolpath = null;
+    activeDimensions = null;
     Object.keys(ncLineMaterials).forEach((motion) => {
       ncLineMaterials[motion] = null;
     });
   }
 
-  return { buildNcPreview, updateVisualSettings, clearNcPreview };
+  return { buildNcPreview, updateVisualSettings, setHoverHighlight, setSelectionHighlight, clearNcPreview };
 }
 
 export function mapNcPointToThree(point, dimensions) {

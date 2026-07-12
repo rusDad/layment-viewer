@@ -3,9 +3,10 @@ import * as THREE from 'three';
 export const NC_PICKING_LINE_THRESHOLD_MM = 4;
 
 export class NcPickingController {
-  constructor({ camera, renderer }) {
+  constructor({ camera, renderer, controls, onHoverSegmentChange, onSelectSegmentChange }) {
     this.camera = camera;
     this.renderer = renderer;
+    this.controls = controls;
     this.raycaster = new THREE.Raycaster();
     this.raycaster.params.Line.threshold = NC_PICKING_LINE_THRESHOLD_MM;
     this.pointer = new THREE.Vector2();
@@ -15,11 +16,16 @@ export class NcPickingController {
     this.enabled = true;
     this.hoveredSegmentId = null;
     this.selectedSegmentId = null;
+    this.isOrbitDragging = false;
+    this.onHoverSegmentChange = onHoverSegmentChange;
+    this.onSelectSegmentChange = onSelectSegmentChange;
 
     this.handlePointerMove = this.handlePointerMove.bind(this);
     this.handlePointerLeave = this.handlePointerLeave.bind(this);
     this.handlePointerDown = this.handlePointerDown.bind(this);
     this.flushPointerMove = this.flushPointerMove.bind(this);
+    this.handleControlsStart = this.handleControlsStart.bind(this);
+    this.handleControlsEnd = this.handleControlsEnd.bind(this);
   }
 
   init() {
@@ -28,6 +34,8 @@ export class NcPickingController {
     canvas.addEventListener('pointermove', this.handlePointerMove);
     canvas.addEventListener('pointerleave', this.handlePointerLeave);
     canvas.addEventListener('pointerdown', this.handlePointerDown);
+    this.controls?.addEventListener('start', this.handleControlsStart);
+    this.controls?.addEventListener('end', this.handleControlsEnd);
   }
 
   dispose() {
@@ -37,6 +45,8 @@ export class NcPickingController {
       canvas.removeEventListener('pointerleave', this.handlePointerLeave);
       canvas.removeEventListener('pointerdown', this.handlePointerDown);
     }
+    this.controls?.removeEventListener('start', this.handleControlsStart);
+    this.controls?.removeEventListener('end', this.handleControlsEnd);
     if (this.pendingFrame !== null) {
       cancelAnimationFrame(this.pendingFrame);
       this.pendingFrame = null;
@@ -50,13 +60,14 @@ export class NcPickingController {
 
   clearPickableLineBatches() {
     this.pickableLineBatches = [];
-    this.hoveredSegmentId = null;
-    this.selectedSegmentId = null;
+    this.setHoveredSegmentId(null);
+    this.setSelectedSegmentId(null);
+    this.isOrbitDragging = false;
     this.latestPointerEvent = null;
   }
 
   pickFromPointerEvent(event) {
-    if (!this.enabled || this.pickableLineBatches.length === 0) {
+    if (!this.enabled || this.isOrbitDragging || this.pickableLineBatches.length === 0) {
       return null;
     }
 
@@ -106,16 +117,40 @@ export class NcPickingController {
   flushPointerMove() {
     this.pendingFrame = null;
     const hit = this.latestPointerEvent ? this.pickFromPointerEvent(this.latestPointerEvent) : null;
-    this.hoveredSegmentId = hit?.logicalSegmentId ?? null;
+    this.setHoveredSegmentId(hit?.logicalSegmentId ?? null);
   }
 
   handlePointerLeave() {
     this.latestPointerEvent = null;
-    this.hoveredSegmentId = null;
+    this.setHoveredSegmentId(null);
   }
 
   handlePointerDown(event) {
     const hit = this.pickFromPointerEvent(event);
-    this.selectedSegmentId = hit?.logicalSegmentId ?? null;
+    this.setSelectedSegmentId(hit?.logicalSegmentId ?? null);
+  }
+
+  handleControlsStart() {
+    this.isOrbitDragging = true;
+    this.latestPointerEvent = null;
+    this.setHoveredSegmentId(null);
+  }
+
+  handleControlsEnd() {
+    this.isOrbitDragging = false;
+  }
+
+  setHoveredSegmentId(segmentId) {
+    const normalized = Number.isInteger(segmentId) ? segmentId : null;
+    if (this.hoveredSegmentId === normalized) return;
+    this.hoveredSegmentId = normalized;
+    this.onHoverSegmentChange?.(normalized);
+  }
+
+  setSelectedSegmentId(segmentId) {
+    const normalized = Number.isInteger(segmentId) ? segmentId : null;
+    if (this.selectedSegmentId === normalized) return;
+    this.selectedSegmentId = normalized;
+    this.onSelectSegmentChange?.(normalized);
   }
 }
