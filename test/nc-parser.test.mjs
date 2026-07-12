@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { parseNcToToolpath, parseWords, stripGcodeComments } from '../public/nc-parser.mjs';
+import { parseNcToToolpath, parseWords, stripGcodeComments } from '../public/nc/nc-parser.mjs';
 
 assert.equal(stripGcodeComments('G1 X1 (ignore X99) Y2 ; ignore Z9'), 'G1 X1  Y2');
 assert.deepEqual(parseWords('g01 x10.5 y-2 z.25').map((word) => [word.letter, word.value]), [
