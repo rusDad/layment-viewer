@@ -28,6 +28,11 @@ export class StlViewer {
 const STL_TOP_FACE_DOT_THRESHOLD = 0.6;
 const STL_TOP_FACE_HEIGHT_EPS_MM = 0.2;
 const STL_LOCAL_TOP_NORMAL = new THREE.Vector3(0, 0, 1);
+const EVA_GREEN_COLOR = 0x6ea978;
+const MATERIAL_METALNESS = 0.012;
+const TOP_LAYER_ROUGHNESS = 0.75;
+const GREEN_LAYER_ROUGHNESS = 0.85;
+const TOP_LAYER_COLOR = 0x4a4a4a;
 
 export function createStlViewer(ctx) {
   const { state, scene, stlFileInput, viewerMode, isPreviewMode, setErrorState, setSuccessState, setLoadingState, setStlUploadState, setStlUploadLink, buildPreviewUrl, clearCurrentModel, clearNcPreview, disposeMaterial, fitCamera } = ctx;
@@ -121,7 +126,7 @@ function buildStlModel(geometry) {
   geometry.computeVertexNormals();
 
   const baseMaterial = new THREE.MeshStandardMaterial({
-    color: getBaseMaterialColorHex(DEFAULT_BASE_MATERIAL_COLOR),
+    color: EVA_GREEN_COLOR,
     metalness: MATERIAL_METALNESS,
     roughness: GREEN_LAYER_ROUGHNESS
   });
