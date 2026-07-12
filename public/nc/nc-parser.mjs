@@ -1,6 +1,7 @@
 const SUPPORTED_MOTIONS = new Set(['G0', 'G1', 'G2', 'G3']);
 const LINEAR_MOTIONS = new Set(['G0', 'G1']);
 const ARC_MOTIONS = new Set(['G2', 'G3']);
+const SUPPORTED_MODAL_G_CODES = new Set(['G17', 'G20', 'G21', 'G90', 'G91', 'G90.1', 'G91.1']);
 
 export const NC_MAX_FILE_BYTES = 5 * 1024 * 1024;
 export const NC_MAX_RENDERED_POINTS = 200000;
@@ -49,40 +50,59 @@ export function parseWords(line) {
 
 export function parseNcProgram(text) {
   const lines = typeof text === 'string' ? text.split(/\r?\n/) : [];
-  return lines.map((line, index) => ({ line, lineNumber: index + 1, words: parseWords(line) }));
+  return lines.map((line, index) => ({
+    index,
+    number: index + 1,
+    text: line,
+    segmentIds: [],
+    line,
+    lineNumber: index + 1,
+    words: parseWords(line)
+  }));
 }
 
 export function applyModalWords(words, modalState) {
   const next = { ...modalState };
   let lineMotion = null;
+  const unsupportedGCodes = [];
 
   words.forEach((word) => {
-    if (word.letter !== 'G' || !Number.isFinite(word.value)) {
+    if (!Number.isFinite(word.value)) {
       return;
     }
 
-    const normalized = normalizeGCode(word.value);
-    if (SUPPORTED_MOTIONS.has(normalized)) {
-      lineMotion = normalized;
-      next.motion = normalized;
-    } else if (normalized === 'G90') {
-      next.positioning = 'absolute';
-    } else if (normalized === 'G91') {
-      next.positioning = 'incremental';
-    } else if (normalized === 'G20') {
-      next.units = 'inch';
-    } else if (normalized === 'G21') {
-      next.units = 'mm';
-    } else if (normalized === 'G17') {
-      next.plane = 'XY';
-    } else if (normalized === 'G90.1') {
-      next.arcCenterMode = 'absolute';
-    } else if (normalized === 'G91.1') {
-      next.arcCenterMode = 'incremental';
+    if (word.letter === 'G') {
+      const normalized = normalizeGCode(word.value);
+      if (SUPPORTED_MOTIONS.has(normalized)) {
+        lineMotion = normalized;
+        next.motion = normalized;
+      } else if (normalized === 'G90') {
+        next.positioning = 'absolute';
+      } else if (normalized === 'G91') {
+        next.positioning = 'incremental';
+      } else if (normalized === 'G20') {
+        next.units = 'inch';
+      } else if (normalized === 'G21') {
+        next.units = 'mm';
+      } else if (normalized === 'G17') {
+        next.plane = 'XY';
+      } else if (normalized === 'G90.1') {
+        next.arcCenterMode = 'absolute';
+      } else if (normalized === 'G91.1') {
+        next.arcCenterMode = 'incremental';
+      } else if (!SUPPORTED_MODAL_G_CODES.has(normalized)) {
+        unsupportedGCodes.push(normalized);
+      }
+    } else if (word.letter === 'F') {
+      next.feed = word.value;
+    } else if (word.letter === 'T') {
+      next.tool = word.value;
+    } else if (word.letter === 'S') {
+      next.spindle = word.value;
     }
   });
 
-  return { modalState: next, lineMotion };
+  return { modalState: next, lineMotion, unsupportedGCodes };
 }
 
 export function buildLinearSegment(start, end, motion, sourceLine) {
@@ -166,6 +186,7 @@ function buildCenterArcSegments(start, end, center, motion, sourceLine) {
 export function parseNcToToolpath(text, options = {}) {
   const maxRenderedPoints = Number.isFinite(options.maxRenderedPoints) ? options.maxRenderedPoints : NC_MAX_RENDERED_POINTS;
   const program = parseNcProgram(text);
+  const lines = program.map(({ index, number, text: lineText, segmentIds }) => ({ index, number, text: lineText, segmentIds }));
   const segments = [];
   const warnings = [];
   const stats = { g0: 0, g1: 0, g2: 0, g3: 0, skipped: 0, warningsCount: 0 };
@@ -178,7 +199,10 @@ export function parseNcToToolpath(text, options = {}) {
     positioning: 'absolute',
     units: 'mm',
     plane: 'XY',
-    arcCenterMode: 'incremental'
+    arcCenterMode: 'incremental',
+    feed: null,
+    tool: null,
+    spindle: null
   };
 
   updateBBox(bbox, currentPosition);
@@ -198,7 +222,9 @@ export function parseNcToToolpath(text, options = {}) {
 
     const wordsByLetter = mapLastWordsByLetter(words);
     const hasMotionData = ['X', 'Y', 'Z', 'I', 'J', 'R'].some((letter) => wordsByLetter.has(letter));
-    const motion = modalResult.lineMotion || (hasMotionData ? modalState.motion : null);
+    const motion = modalResult.unsupportedGCodes.length === 0
+      ? modalResult.lineMotion || (hasMotionData ? modalState.motion : null)
+      : null;
 
     if (!SUPPORTED_MOTIONS.has(motion)) {
       continue;
@@ -241,6 +267,18 @@ export function parseNcToToolpath(text, options = {}) {
       break;
     }
 
+    segment.id = segments.length;
+    segment.sourceLineIndex = item.index;
+    segment.sourceLineNumber = item.number;
+    segment.sourceText = item.text;
+    segment.sourceLine = item.number;
+    segment.start = { ...segment.points[0] };
+    segment.end = { ...segment.points[segment.points.length - 1] };
+    segment.feed = modalState.feed;
+    segment.tool = modalState.tool;
+    segment.spindle = modalState.spindle;
+    lines[item.index].segmentIds.push(segment.id);
+
     segment.points.forEach((point) => updateBBox(bbox, point));
     segments.push(segment);
     stats[motion.toLowerCase()] += 1;
@@ -249,6 +287,7 @@ export function parseNcToToolpath(text, options = {}) {
   stats.warningsCount = warnings.length;
 
   return {
+    lines,
     segments,
     bbox: normalizeBBox(bbox),
     stats,
