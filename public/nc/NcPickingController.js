@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 
 export const NC_PICKING_LINE_THRESHOLD_MM = 4;
+export const NC_CLICK_MOVEMENT_THRESHOLD_PX = 5;
 
 export class NcPickingController {
   constructor({ camera, renderer, controls, onHoverSegmentChange, onSelectSegmentChange }) {
@@ -17,12 +18,15 @@ export class NcPickingController {
     this.hoveredSegmentId = null;
     this.selectedSegmentId = null;
     this.isOrbitDragging = false;
+    this.pointerDown = null;
     this.onHoverSegmentChange = onHoverSegmentChange;
     this.onSelectSegmentChange = onSelectSegmentChange;
 
     this.handlePointerMove = this.handlePointerMove.bind(this);
     this.handlePointerLeave = this.handlePointerLeave.bind(this);
     this.handlePointerDown = this.handlePointerDown.bind(this);
+    this.handlePointerUp = this.handlePointerUp.bind(this);
+    this.handlePointerCancel = this.handlePointerCancel.bind(this);
     this.flushPointerMove = this.flushPointerMove.bind(this);
     this.handleControlsStart = this.handleControlsStart.bind(this);
     this.handleControlsEnd = this.handleControlsEnd.bind(this);
@@ -34,6 +38,8 @@ export class NcPickingController {
     canvas.addEventListener('pointermove', this.handlePointerMove);
     canvas.addEventListener('pointerleave', this.handlePointerLeave);
     canvas.addEventListener('pointerdown', this.handlePointerDown);
+    canvas.addEventListener('pointerup', this.handlePointerUp);
+    canvas.addEventListener('pointercancel', this.handlePointerCancel);
     this.controls?.addEventListener('start', this.handleControlsStart);
     this.controls?.addEventListener('end', this.handleControlsEnd);
   }
@@ -44,6 +50,8 @@ export class NcPickingController {
       canvas.removeEventListener('pointermove', this.handlePointerMove);
       canvas.removeEventListener('pointerleave', this.handlePointerLeave);
       canvas.removeEventListener('pointerdown', this.handlePointerDown);
+      canvas.removeEventListener('pointerup', this.handlePointerUp);
+      canvas.removeEventListener('pointercancel', this.handlePointerCancel);
     }
     this.controls?.removeEventListener('start', this.handleControlsStart);
     this.controls?.removeEventListener('end', this.handleControlsEnd);
@@ -64,6 +72,7 @@ export class NcPickingController {
     this.setSelectedSegmentId(null);
     this.isOrbitDragging = false;
     this.latestPointerEvent = null;
+    this.pointerDown = null;
   }
 
   pickFromPointerEvent(event) {
@@ -126,12 +135,41 @@ export class NcPickingController {
   }
 
   handlePointerDown(event) {
+    this.pointerDown = {
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+      clientY: event.clientY
+    };
+  }
+
+  handlePointerUp(event) {
+    if (!this.isClickFromPointerUp(event)) {
+      this.pointerDown = null;
+      return;
+    }
+
     const hit = this.pickFromPointerEvent(event);
     this.setSelectedSegmentId(hit?.logicalSegmentId ?? null);
+    this.pointerDown = null;
+  }
+
+  handlePointerCancel() {
+    this.pointerDown = null;
+  }
+
+  isClickFromPointerUp(event) {
+    if (!this.pointerDown || this.pointerDown.pointerId !== event.pointerId || this.isOrbitDragging) {
+      return false;
+    }
+
+    const dx = event.clientX - this.pointerDown.clientX;
+    const dy = event.clientY - this.pointerDown.clientY;
+    return Math.hypot(dx, dy) <= NC_CLICK_MOVEMENT_THRESHOLD_PX;
   }
 
   handleControlsStart() {
     this.isOrbitDragging = true;
+    this.pointerDown = null;
     this.latestPointerEvent = null;
     this.setHoveredSegmentId(null);
   }

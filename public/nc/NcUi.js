@@ -1,7 +1,27 @@
 import { NC_DEFAULT_COLORS } from './NcScene.js';
 
+const NC_SOURCE_ROW_HEIGHT_PX = 24;
+const NC_SOURCE_OVERSCAN_ROWS = 8;
+
 export function createNcUi(ctx) {
-  const { ncStatusEl, ncHoverInspectorEl, ncWidthInput, ncHeightInput, ncThicknessInput, ncOpacityInput, ncOpacityValueEl, ncColorInputs } = ctx;
+  const {
+    ncStatusEl,
+    ncHoverInspectorEl,
+    ncSourcePanelEl,
+    ncSourceListEl,
+    ncSourceDetailEl,
+    ncWidthInput,
+    ncHeightInput,
+    ncThicknessInput,
+    ncOpacityInput,
+    ncOpacityValueEl,
+    ncColorInputs
+  } = ctx;
+
+  let sourceLines = [];
+  let selectedSegmentId = null;
+  let selectedLineIndex = null;
+  let sourceScrollHandler = null;
 
   function setNcStatus(message, isError = false) {
     if (!ncStatusEl) {
@@ -44,37 +64,142 @@ export function createNcUi(ctx) {
   }
 
   function showHoverInspector(segment) {
-    if (!ncHoverInspectorEl) return;
-    if (!segment) {
-      ncHoverInspectorEl.hidden = true;
-      ncHoverInspectorEl.innerHTML = '';
+    renderInspector(ncHoverInspectorEl, segment);
+  }
+
+  function setSourceDocument(lines) {
+    sourceLines = Array.isArray(lines) ? lines : [];
+    selectedSegmentId = null;
+    selectedLineIndex = null;
+    if (ncSourceListEl && !sourceScrollHandler) {
+      sourceScrollHandler = () => renderSourceWindow();
+      ncSourceListEl.addEventListener('scroll', sourceScrollHandler);
+    }
+    clearSourceSelection();
+  }
+
+  function showSourceSelection(segment) {
+    selectedSegmentId = Number.isInteger(segment?.id) ? segment.id : null;
+    selectedLineIndex = Number.isInteger(segment?.sourceLineIndex) ? segment.sourceLineIndex : null;
+
+    if (!segment || selectedLineIndex === null) {
+      clearSourceSelection();
       return;
     }
 
-    ncHoverInspectorEl.hidden = false;
-    ncHoverInspectorEl.innerHTML = '';
+    if (ncSourcePanelEl) {
+      ncSourcePanelEl.hidden = false;
+    }
+    renderSourceDetail(segment);
+    scrollSourceLineIntoView(selectedLineIndex);
+    renderSourceWindow();
+  }
 
-    const line = document.createElement('div');
-    line.className = 'nc-inspector-line';
-    line.textContent = `Line ${segment.sourceLineNumber ?? 'n/a'}`;
+  function clearSourceSelection() {
+    selectedSegmentId = null;
+    selectedLineIndex = null;
+    if (ncSourcePanelEl) {
+      ncSourcePanelEl.hidden = true;
+    }
+    if (ncSourceDetailEl) {
+      ncSourceDetailEl.textContent = '';
+    }
+    if (ncSourceListEl) {
+      ncSourceListEl.innerHTML = '';
+      ncSourceListEl.style.removeProperty('--nc-source-total-height');
+    }
+  }
 
-    const source = document.createElement('pre');
-    source.className = 'nc-inspector-source';
-    source.textContent = segment.sourceText || '';
+  function dispose() {
+    if (ncSourceListEl && sourceScrollHandler) {
+      ncSourceListEl.removeEventListener('scroll', sourceScrollHandler);
+    }
+    sourceScrollHandler = null;
+    clearSourceSelection();
+    showHoverInspector(null);
+  }
 
+  function renderSourceDetail(segment) {
+    if (!ncSourceDetailEl) return;
+    ncSourceDetailEl.innerHTML = '';
+    const title = document.createElement('div');
+    title.className = 'nc-source-detail-title';
+    title.textContent = `Line ${segment.sourceLineNumber ?? 'n/a'} · ${segment.motion ?? 'n/a'}`;
     const meta = document.createElement('dl');
     meta.className = 'nc-inspector-meta';
-    appendInspectorRow(meta, 'Motion', segment.motion);
     appendInspectorRow(meta, 'From', formatNcPoint(segment.start));
     appendInspectorRow(meta, 'To', formatNcPoint(segment.end));
     appendInspectorRow(meta, 'Feed', formatNullable(segment.feed, ' mm/min'));
     appendInspectorRow(meta, 'Tool', segment.tool == null ? 'n/a' : `T${formatNumber(segment.tool)}`);
     appendInspectorRow(meta, 'Spindle', formatNullable(segment.spindle));
-
-    ncHoverInspectorEl.append(line, source, meta);
+    ncSourceDetailEl.append(title, meta);
   }
 
-  return { setNcStatus, getNcDimensionsFromUi, getNcVisualSettings, updateNcOpacityLabel, showHoverInspector };
+  function scrollSourceLineIntoView(lineIndex) {
+    if (!ncSourceListEl) return;
+    const viewportRows = Math.max(1, Math.floor(ncSourceListEl.clientHeight / NC_SOURCE_ROW_HEIGHT_PX));
+    const firstVisible = Math.floor(ncSourceListEl.scrollTop / NC_SOURCE_ROW_HEIGHT_PX);
+    const lastVisible = firstVisible + viewportRows - 1;
+    if (lineIndex < firstVisible) {
+      ncSourceListEl.scrollTop = lineIndex * NC_SOURCE_ROW_HEIGHT_PX;
+    } else if (lineIndex > lastVisible) {
+      ncSourceListEl.scrollTop = Math.max(0, (lineIndex - viewportRows + 1) * NC_SOURCE_ROW_HEIGHT_PX);
+    }
+  }
+
+  function renderSourceWindow() {
+    if (!ncSourceListEl || sourceLines.length === 0) return;
+    const viewportRows = Math.max(1, Math.ceil(ncSourceListEl.clientHeight / NC_SOURCE_ROW_HEIGHT_PX));
+    const visibleStart = Math.floor(ncSourceListEl.scrollTop / NC_SOURCE_ROW_HEIGHT_PX);
+    const first = Math.max(0, visibleStart - NC_SOURCE_OVERSCAN_ROWS);
+    const last = Math.min(sourceLines.length - 1, visibleStart + viewportRows + NC_SOURCE_OVERSCAN_ROWS);
+    ncSourceListEl.innerHTML = '';
+    ncSourceListEl.style.setProperty('--nc-source-total-height', `${sourceLines.length * NC_SOURCE_ROW_HEIGHT_PX}px`);
+
+    const spacer = document.createElement('div');
+    spacer.className = 'nc-source-spacer';
+    spacer.style.height = `${sourceLines.length * NC_SOURCE_ROW_HEIGHT_PX}px`;
+    const windowEl = document.createElement('div');
+    windowEl.className = 'nc-source-window';
+    windowEl.style.transform = `translateY(${first * NC_SOURCE_ROW_HEIGHT_PX}px)`;
+
+    for (let index = first; index <= last; index += 1) {
+      const line = sourceLines[index];
+      const row = document.createElement('div');
+      row.className = 'nc-source-row';
+      row.setAttribute('role', 'option');
+      row.setAttribute('aria-selected', String(index === selectedLineIndex));
+      row.classList.toggle('is-selected', index === selectedLineIndex);
+      const segmentIds = Array.isArray(line.segmentIds) ? line.segmentIds : [];
+      row.classList.toggle('has-segment', segmentIds.length > 0);
+      row.dataset.lineIndex = String(line.index);
+      row.dataset.segmentIds = segmentIds.join(',');
+
+      const number = document.createElement('span');
+      number.className = 'nc-source-row-number';
+      number.textContent = String(line.number);
+      const text = document.createElement('code');
+      text.className = 'nc-source-row-text';
+      text.textContent = line.text || ' ';
+      row.append(number, text);
+      windowEl.append(row);
+    }
+
+    spacer.append(windowEl);
+    ncSourceListEl.append(spacer);
+  }
+
+  return {
+    setNcStatus,
+    getNcDimensionsFromUi,
+    getNcVisualSettings,
+    updateNcOpacityLabel,
+    showHoverInspector,
+    setSourceDocument,
+    showSourceSelection,
+    clearSourceSelection,
+    dispose
+  };
 }
 
 export function formatNcStatus(toolpath, prefix = '') {
@@ -97,6 +222,37 @@ export function formatNcStatus(toolpath, prefix = '') {
   ].filter(Boolean);
 
   return lines.join('\n');
+}
+
+function renderInspector(container, segment) {
+  if (!container) return;
+  if (!segment) {
+    container.hidden = true;
+    container.innerHTML = '';
+    return;
+  }
+
+  container.hidden = false;
+  container.innerHTML = '';
+
+  const line = document.createElement('div');
+  line.className = 'nc-inspector-line';
+  line.textContent = `Line ${segment.sourceLineNumber ?? 'n/a'}`;
+
+  const source = document.createElement('pre');
+  source.className = 'nc-inspector-source';
+  source.textContent = segment.sourceText || '';
+
+  const meta = document.createElement('dl');
+  meta.className = 'nc-inspector-meta';
+  appendInspectorRow(meta, 'Motion', segment.motion);
+  appendInspectorRow(meta, 'From', formatNcPoint(segment.start));
+  appendInspectorRow(meta, 'To', formatNcPoint(segment.end));
+  appendInspectorRow(meta, 'Feed', formatNullable(segment.feed, ' mm/min'));
+  appendInspectorRow(meta, 'Tool', segment.tool == null ? 'n/a' : `T${formatNumber(segment.tool)}`);
+  appendInspectorRow(meta, 'Spindle', formatNullable(segment.spindle));
+
+  container.append(line, source, meta);
 }
 
 function formatMm(value) {
