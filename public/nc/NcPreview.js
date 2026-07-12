@@ -34,22 +34,33 @@ export class NcPreview {
 export function createNcPreview(ctx) {
   const { viewerMode, isPreviewMode, ncFileInput } = ctx;
   const ncScene = createNcScene(ctx);
-  const ncUi = createNcUi(ctx);
   let activeToolpath = null;
+  let ncUi;
   const selection = new NcSelectionController({
     onHoverChange: (segmentId) => {
       ncScene.setHoverHighlight(segmentId);
       ncUi.showHoverInspector(getActiveSegment(segmentId));
     },
-    onSelectionChange: (segmentId) => {
+    onSelectionChange: (segmentId, sourceContext = null) => {
       ncScene.setSelectionHighlight(segmentId);
-      ncUi.showSourceSelection(getActiveSegment(segmentId));
-    }
+      const segment = getActiveSegment(segmentId);
+      if (sourceContext?.sourceLine) {
+        ncUi.showSourceLineSelection(sourceContext.sourceLine, segment);
+      } else {
+        ncUi.showSourceSelection(segment);
+      }
+    },
+    getSourceLineByNumber
+  });
+  ncUi = createNcUi({
+    ...ctx,
+    onSourceLineSelect: (lineNumber) => selection.selectSourceLine(lineNumber),
+    onFocusSelectedSegment: () => focusSelectedSegment()
   });
   const ncPicking = new NcPickingController({
     ...ctx,
     onHoverSegmentChange: (segmentId) => selection.setHoveredSegmentId(segmentId),
-    onSelectSegmentChange: (segmentId) => selection.setSelectedSegmentId(segmentId)
+    onSelectSegmentChange: (segmentId) => selection.selectSegment(segmentId)
   });
 
   async function buildNcPreviewFromUi() {
@@ -109,11 +120,34 @@ export function createNcPreview(ctx) {
     ncUi.setNcStatus(formatNcStatus(toolpath));
   }
 
+  function selectSegment(segmentId) {
+    selection.selectSegment(segmentId);
+  }
+
+  function selectSourceLine(lineNumber) {
+    selection.selectSourceLine(lineNumber);
+  }
+
+  function clearSelection() {
+    selection.clearSelection();
+  }
+
+  function focusSelectedSegment() {
+    ncScene.focusSelectedSegment();
+  }
+
   function getActiveSegment(segmentId) {
     if (!Number.isInteger(segmentId) || !activeToolpath) {
       return null;
     }
     return activeToolpath.segments.find((segment) => segment.id === segmentId) ?? null;
+  }
+
+  function getSourceLineByNumber(lineNumber) {
+    if (!Number.isInteger(lineNumber) || !activeToolpath) {
+      return null;
+    }
+    return activeToolpath.lines.find((line) => line.number === lineNumber) ?? null;
   }
 
   function updateNcVisualSettings() {
@@ -124,6 +158,10 @@ export function createNcPreview(ctx) {
   return {
     init: () => ncPicking.init(),
     buildNcPreviewFromUi,
+    selectSegment,
+    selectSourceLine,
+    clearSelection,
+    focusSelectedSegment,
     updateNcVisualSettings,
     updateNcOpacityLabel: ncUi.updateNcOpacityLabel,
     clearNcPreview: () => {

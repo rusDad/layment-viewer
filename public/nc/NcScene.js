@@ -110,6 +110,12 @@ export function createNcScene(ctx) {
     selectionHighlight = replaceSegmentHighlight(selectionHighlight, segmentId, 0x5ce1ff, 'NC selection highlight', 5);
   }
 
+  function focusSelectedSegment() {
+    if (selectionHighlight) {
+      fitCamera(selectionHighlight);
+    }
+  }
+
   function replaceSegmentHighlight(current, segmentId, color, name, renderOrder) {
     disposeHighlight(current);
     if (!Number.isInteger(segmentId) || !activeToolpath || !activeDimensions || !ncPreviewGroup) {
@@ -191,7 +197,7 @@ export function createNcScene(ctx) {
     });
   }
 
-  return { buildNcPreview, updateVisualSettings, setHoverHighlight, setSelectionHighlight, clearNcPreview };
+  return { buildNcPreview, updateVisualSettings, setHoverHighlight, setSelectionHighlight, focusSelectedSegment, clearNcPreview };
 }
 
 export function mapNcPointToThree(point, dimensions) {

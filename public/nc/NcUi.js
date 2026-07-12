@@ -10,12 +10,15 @@ export function createNcUi(ctx) {
     ncSourcePanelEl,
     ncSourceListEl,
     ncSourceDetailEl,
+    ncSourceFocusButton,
     ncWidthInput,
     ncHeightInput,
     ncThicknessInput,
     ncOpacityInput,
     ncOpacityValueEl,
-    ncColorInputs
+    ncColorInputs,
+    onSourceLineSelect,
+    onFocusSelectedSegment
   } = ctx;
 
   let sourceLines = [];
@@ -74,8 +77,16 @@ export function createNcUi(ctx) {
     if (ncSourceListEl && !sourceScrollHandler) {
       sourceScrollHandler = () => renderSourceWindow();
       ncSourceListEl.addEventListener('scroll', sourceScrollHandler);
+      ncSourceListEl.addEventListener('click', handleSourceListClick);
+      ncSourceListEl.addEventListener('keydown', handleSourceListKeyDown);
     }
+    ncSourceFocusButton?.removeEventListener('click', handleFocusClick);
+    ncSourceFocusButton?.addEventListener('click', handleFocusClick);
     clearSourceSelection();
+    if (ncSourcePanelEl) {
+      ncSourcePanelEl.hidden = sourceLines.length === 0;
+    }
+    renderSourceWindow();
   }
 
   function showSourceSelection(segment) {
@@ -91,6 +102,25 @@ export function createNcUi(ctx) {
       ncSourcePanelEl.hidden = false;
     }
     renderSourceDetail(segment);
+    updateFocusButton(Boolean(segment));
+    scrollSourceLineIntoView(selectedLineIndex);
+    renderSourceWindow();
+  }
+
+  function showSourceLineSelection(line, segment) {
+    selectedSegmentId = Number.isInteger(segment?.id) ? segment.id : null;
+    selectedLineIndex = Number.isInteger(line?.index) ? line.index : null;
+
+    if (!line || selectedLineIndex === null) {
+      clearSourceSelection();
+      return;
+    }
+
+    if (ncSourcePanelEl) {
+      ncSourcePanelEl.hidden = false;
+    }
+    renderSourceDetail(segment, line);
+    updateFocusButton(Boolean(segment));
     scrollSourceLineIntoView(selectedLineIndex);
     renderSourceWindow();
   }
@@ -98,6 +128,7 @@ export function createNcUi(ctx) {
   function clearSourceSelection() {
     selectedSegmentId = null;
     selectedLineIndex = null;
+    updateFocusButton(false);
     if (ncSourcePanelEl) {
       ncSourcePanelEl.hidden = true;
     }
@@ -113,18 +144,61 @@ export function createNcUi(ctx) {
   function dispose() {
     if (ncSourceListEl && sourceScrollHandler) {
       ncSourceListEl.removeEventListener('scroll', sourceScrollHandler);
+      ncSourceListEl.removeEventListener('click', handleSourceListClick);
+      ncSourceListEl.removeEventListener('keydown', handleSourceListKeyDown);
     }
     sourceScrollHandler = null;
+    ncSourceFocusButton?.removeEventListener('click', handleFocusClick);
     clearSourceSelection();
     showHoverInspector(null);
   }
 
-  function renderSourceDetail(segment) {
+  function handleSourceListClick(event) {
+    const row = event.target?.closest?.('.nc-source-row');
+    if (!row) return;
+    const lineNumber = Number(row.dataset.lineNumber);
+    if (Number.isInteger(lineNumber)) {
+      onSourceLineSelect?.(lineNumber);
+    }
+  }
+
+  function handleSourceListKeyDown(event) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const row = event.target?.closest?.('.nc-source-row');
+    if (!row) return;
+    event.preventDefault();
+    const lineNumber = Number(row.dataset.lineNumber);
+    if (Number.isInteger(lineNumber)) {
+      onSourceLineSelect?.(lineNumber);
+    }
+  }
+
+  function handleFocusClick() {
+    onFocusSelectedSegment?.();
+  }
+
+  function updateFocusButton(enabled) {
+    if (ncSourceFocusButton) {
+      ncSourceFocusButton.disabled = !enabled;
+    }
+  }
+
+  function renderSourceDetail(segment, sourceLine = null) {
     if (!ncSourceDetailEl) return;
     ncSourceDetailEl.innerHTML = '';
     const title = document.createElement('div');
     title.className = 'nc-source-detail-title';
-    title.textContent = `Line ${segment.sourceLineNumber ?? 'n/a'} · ${segment.motion ?? 'n/a'}`;
+    const lineNumber = segment?.sourceLineNumber ?? sourceLine?.number ?? 'n/a';
+    title.textContent = segment
+      ? `Line ${lineNumber} · ${segment.motion ?? 'n/a'}`
+      : `Line ${lineNumber} · No rendered motion`;
+    if (!segment) {
+      const source = document.createElement('pre');
+      source.className = 'nc-inspector-source';
+      source.textContent = sourceLine?.text || '';
+      ncSourceDetailEl.append(title, source);
+      return;
+    }
     const meta = document.createElement('dl');
     meta.className = 'nc-inspector-meta';
     appendInspectorRow(meta, 'From', formatNcPoint(segment.start));
@@ -172,7 +246,10 @@ export function createNcUi(ctx) {
       row.classList.toggle('is-selected', index === selectedLineIndex);
       const segmentIds = Array.isArray(line.segmentIds) ? line.segmentIds : [];
       row.classList.toggle('has-segment', segmentIds.length > 0);
+      row.classList.toggle('no-segment', segmentIds.length === 0);
+      row.tabIndex = -1;
       row.dataset.lineIndex = String(line.index);
+      row.dataset.lineNumber = String(line.number);
       row.dataset.segmentIds = segmentIds.join(',');
 
       const number = document.createElement('span');
@@ -197,6 +274,7 @@ export function createNcUi(ctx) {
     showHoverInspector,
     setSourceDocument,
     showSourceSelection,
+    showSourceLineSelection,
     clearSourceSelection,
     dispose
   };
