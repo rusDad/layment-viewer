@@ -1,24 +1,26 @@
 import * as THREE from 'three';
-
-export const NC_PICKING_LINE_THRESHOLD_MM = 4;
-export const NC_CLICK_MOVEMENT_THRESHOLD_PX = 5;
+import {
+  NC_SCREEN_PICK_RADIUS_PX,
+  chooseClosestScreenSegment,
+  createPointerInteractionState,
+  isSegmentCompletelyOutsideClip,
+  isValidProjectedPoint,
+  ndcToCssPixels
+} from './NcPickingMath.js';
 
 export class NcPickingController {
   constructor({ camera, renderer, controls, onHoverSegmentChange, onSelectSegmentChange }) {
     this.camera = camera;
     this.renderer = renderer;
     this.controls = controls;
-    this.raycaster = new THREE.Raycaster();
-    this.raycaster.params.Line.threshold = NC_PICKING_LINE_THRESHOLD_MM;
-    this.pointer = new THREE.Vector2();
+    this.tempStart = new THREE.Vector3();
+    this.tempEnd = new THREE.Vector3();
     this.pickableLineBatches = [];
     this.latestPointerEvent = null;
     this.pendingFrame = null;
     this.enabled = true;
     this.hoveredSegmentId = null;
-    this.selectedSegmentId = null;
-    this.isOrbitDragging = false;
-    this.pointerDown = null;
+    this.pointerState = createPointerInteractionState();
     this.onHoverSegmentChange = onHoverSegmentChange;
     this.onSelectSegmentChange = onSelectSegmentChange;
 
@@ -28,8 +30,7 @@ export class NcPickingController {
     this.handlePointerUp = this.handlePointerUp.bind(this);
     this.handlePointerCancel = this.handlePointerCancel.bind(this);
     this.flushPointerMove = this.flushPointerMove.bind(this);
-    this.handleControlsStart = this.handleControlsStart.bind(this);
-    this.handleControlsEnd = this.handleControlsEnd.bind(this);
+    this.handleControlsChange = this.handleControlsChange.bind(this);
   }
 
   init() {
@@ -40,8 +41,7 @@ export class NcPickingController {
     canvas.addEventListener('pointerdown', this.handlePointerDown);
     canvas.addEventListener('pointerup', this.handlePointerUp);
     canvas.addEventListener('pointercancel', this.handlePointerCancel);
-    this.controls?.addEventListener('start', this.handleControlsStart);
-    this.controls?.addEventListener('end', this.handleControlsEnd);
+    this.controls?.addEventListener('change', this.handleControlsChange);
   }
 
   dispose() {
@@ -53,8 +53,7 @@ export class NcPickingController {
       canvas.removeEventListener('pointerup', this.handlePointerUp);
       canvas.removeEventListener('pointercancel', this.handlePointerCancel);
     }
-    this.controls?.removeEventListener('start', this.handleControlsStart);
-    this.controls?.removeEventListener('end', this.handleControlsEnd);
+    this.controls?.removeEventListener('change', this.handleControlsChange);
     if (this.pendingFrame !== null) {
       cancelAnimationFrame(this.pendingFrame);
       this.pendingFrame = null;
@@ -69,54 +68,63 @@ export class NcPickingController {
   clearPickableLineBatches() {
     this.pickableLineBatches = [];
     this.setHoveredSegmentId(null);
-    this.setSelectedSegmentId(null);
-    this.isOrbitDragging = false;
     this.latestPointerEvent = null;
-    this.pointerDown = null;
+    this.pointerState.clear();
   }
 
   pickFromPointerEvent(event) {
-    if (!this.enabled || this.isOrbitDragging || this.pickableLineBatches.length === 0) {
+    if (!this.enabled || this.pickableLineBatches.length === 0) {
       return null;
     }
 
     const rect = this.renderer.domElement.getBoundingClientRect();
-    this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    this.pointer.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
-    this.raycaster.setFromCamera(this.pointer, this.camera);
-
-    const intersections = this.raycaster.intersectObjects(this.pickableLineBatches.map((batch) => batch.object), false);
-    if (intersections.length === 0) {
+    if (rect.width <= 0 || rect.height <= 0) {
       return null;
     }
 
-    const intersection = intersections[0];
-    const batch = this.pickableLineBatches.find((candidate) => candidate.object === intersection.object);
-    if (!batch) {
-      return null;
-    }
+    const pointer = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    const candidates = [];
 
-    const renderSegmentIndex = Math.floor((intersection.index ?? 0) / 2);
-    const ref = batch.renderSegmentRefs[renderSegmentIndex];
-    if (!ref) {
-      return null;
-    }
+    this.pickableLineBatches.forEach((batch) => {
+      const position = batch.object.geometry?.getAttribute?.('position');
+      if (!position) return;
+      batch.object.updateWorldMatrix?.(true, false);
 
-    return {
-      object: intersection.object,
-      point: intersection.point,
-      distance: intersection.distance,
-      renderSegmentIndex,
-      logicalSegmentId: ref.logicalSegmentId,
-      segmentId: ref.segmentId,
-      sourceLineNumber: ref.sourceLineNumber,
-      polylinePartIndex: ref.polylinePartIndex,
-      partIndex: ref.partIndex
-    };
+      for (let renderSegmentIndex = 0; renderSegmentIndex < batch.renderSegmentRefs.length; renderSegmentIndex += 1) {
+        const ref = batch.renderSegmentRefs[renderSegmentIndex];
+        if (!ref) continue;
+
+        this.tempStart.fromBufferAttribute(position, renderSegmentIndex * 2).applyMatrix4(batch.object.matrixWorld).project(this.camera);
+        this.tempEnd.fromBufferAttribute(position, renderSegmentIndex * 2 + 1).applyMatrix4(batch.object.matrixWorld).project(this.camera);
+
+        if (!isValidProjectedPoint(this.tempStart)
+          || !isValidProjectedPoint(this.tempEnd)
+          || isSegmentCompletelyOutsideClip(this.tempStart, this.tempEnd)) {
+          continue;
+        }
+
+        candidates.push({
+          object: batch.object,
+          renderSegmentIndex,
+          logicalSegmentId: ref.logicalSegmentId,
+          segmentId: ref.segmentId,
+          sourceLineNumber: ref.sourceLineNumber,
+          polylinePartIndex: ref.polylinePartIndex,
+          partIndex: ref.partIndex,
+          start: ndcToCssPixels(this.tempStart, rect),
+          end: ndcToCssPixels(this.tempEnd, rect)
+        });
+      }
+    });
+
+    return chooseClosestScreenSegment(pointer, candidates, NC_SCREEN_PICK_RADIUS_PX);
   }
 
   handlePointerMove(event) {
     this.latestPointerEvent = event;
+    if (this.pointerState.move(event)) {
+      this.setHoveredSegmentId(null);
+    }
     if (this.pendingFrame !== null) {
       return;
     }
@@ -125,6 +133,10 @@ export class NcPickingController {
 
   flushPointerMove() {
     this.pendingFrame = null;
+    if (this.pointerState.didDrag) {
+      this.setHoveredSegmentId(null);
+      return;
+    }
     const hit = this.latestPointerEvent ? this.pickFromPointerEvent(this.latestPointerEvent) : null;
     this.setHoveredSegmentId(hit?.logicalSegmentId ?? null);
   }
@@ -135,60 +147,36 @@ export class NcPickingController {
   }
 
   handlePointerDown(event) {
-    this.pointerDown = {
-      pointerId: event.pointerId,
-      clientX: event.clientX,
-      clientY: event.clientY
-    };
+    this.pointerState.begin(event);
   }
 
   handlePointerUp(event) {
-    if (!this.isClickFromPointerUp(event)) {
-      this.pointerDown = null;
+    if (!this.pointerState.isClick(event)) {
+      this.pointerState.clear();
       return;
     }
 
     const hit = this.pickFromPointerEvent(event);
-    this.setSelectedSegmentId(hit?.logicalSegmentId ?? null);
-    this.pointerDown = null;
+    this.onSelectSegmentChange?.(Number.isInteger(hit?.logicalSegmentId) ? hit.logicalSegmentId : null);
+    this.pointerState.clear();
   }
 
   handlePointerCancel() {
-    this.pointerDown = null;
+    this.pointerState.clear();
   }
 
-  isClickFromPointerUp(event) {
-    if (!this.pointerDown || this.pointerDown.pointerId !== event.pointerId || this.isOrbitDragging) {
-      return false;
+  handleControlsChange() {
+    if (!this.latestPointerEvent || this.pendingFrame !== null) {
+      return;
     }
-
-    const dx = event.clientX - this.pointerDown.clientX;
-    const dy = event.clientY - this.pointerDown.clientY;
-    return Math.hypot(dx, dy) <= NC_CLICK_MOVEMENT_THRESHOLD_PX;
+    this.pendingFrame = requestAnimationFrame(this.flushPointerMove);
   }
 
-  handleControlsStart() {
-    this.isOrbitDragging = true;
-    this.pointerDown = null;
-    this.latestPointerEvent = null;
-    this.setHoveredSegmentId(null);
-  }
-
-  handleControlsEnd() {
-    this.isOrbitDragging = false;
-  }
 
   setHoveredSegmentId(segmentId) {
     const normalized = Number.isInteger(segmentId) ? segmentId : null;
     if (this.hoveredSegmentId === normalized) return;
     this.hoveredSegmentId = normalized;
     this.onHoverSegmentChange?.(normalized);
-  }
-
-  setSelectedSegmentId(segmentId) {
-    const normalized = Number.isInteger(segmentId) ? segmentId : null;
-    if (this.selectedSegmentId === normalized) return;
-    this.selectedSegmentId = normalized;
-    this.onSelectSegmentChange?.(normalized);
   }
 }
