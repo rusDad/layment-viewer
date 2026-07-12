@@ -1,6 +1,31 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
+
+export class SvgViewer {
+  constructor(ctx) {
+    this.ctx = ctx;
+    this.controller = createSvg3dController(ctx);
+    this.uploadSvg = this.controller.uploadSvg;
+    this.uploadSvgText = this.controller.uploadSvgText;
+    this.initAutoloadFromPayloadKey = this.controller.initAutoloadFromPayloadKey;
+    this.clearCurrentModel = this.controller.clearCurrentModel;
+  }
+
+  init() {
+    this.ctx.uploadButton?.addEventListener('click', this.uploadSvg);
+
+    if (this.ctx.isPreviewMode(this.ctx.viewerMode) && this.ctx.payloadKey) {
+      this.initAutoloadFromPayloadKey(this.ctx.payloadKey);
+    }
+  }
+
+  dispose() {
+    this.ctx.uploadButton?.removeEventListener('click', this.uploadSvg);
+    this.clearCurrentModel();
+  }
+}
+
 const TOP_SKIN_THICKNESS_MM = 4;
 const TOP_LAYER_COLOR = 0x4a4a4a;
 const EVA_GREEN_COLOR = 0x6ea978;

@@ -1,8 +1,8 @@
 import { ViewerBase, disposeMaterial } from './core/ViewerBase.js';
 import { createViewerScene } from './core/SceneFactory.js';
-import { createSvg3dController } from './svg3d/SvgViewer.js';
-import { createStlViewer } from './stl/StlViewer.js';
-import { createNcPreview } from './nc/NcPreview.js';
+import { SvgViewer } from './svg3d/SvgViewer.js';
+import { StlViewer } from './stl/StlViewer.js';
+import { NcPreview } from './nc/NcPreview.js';
 
 const ViewerMode = {
   PREVIEW: 'preview',
@@ -74,41 +74,46 @@ const sharedContext = {
   setStlUploadState,
   setStlUploadLink,
   buildPreviewUrl,
+  uploadButton,
+  stlUploadButton,
+  ncPreviewButton,
+  payloadKey: query.payloadKey,
+  stlId: query.stl,
   disposeMaterial,
   fitCamera: viewerBase.fitCamera,
   clearNcPreview: () => ncPreviewController?.clearNcPreview()
 };
 
-const svg3dController = createSvg3dController(sharedContext);
-ncPreviewController = createNcPreview({
+const svgViewer = new SvgViewer(sharedContext);
+ncPreviewController = new NcPreview({
   ...sharedContext,
-  clearCurrentModel: svg3dController.clearCurrentModel,
+  clearCurrentModel: svgViewer.clearCurrentModel,
   disposeMaterial,
   fitCamera: viewerBase.fitCamera
 });
-const stlViewer = createStlViewer({
+const stlViewer = new StlViewer({
   ...sharedContext,
-  clearCurrentModel: svg3dController.clearCurrentModel,
+  clearCurrentModel: svgViewer.clearCurrentModel,
   clearNcPreview: ncPreviewController.clearNcPreview,
   disposeMaterial,
   fitCamera: viewerBase.fitCamera
 });
 
-viewerBase.start();
+const activeViewers = getActiveViewers({ svgViewer, stlViewer, ncPreviewController }, query, viewerMode);
+viewerBase.init();
+activeViewers.forEach((viewer) => viewer.init());
 
-uploadButton.addEventListener('click', svg3dController.uploadSvg);
-stlUploadButton?.addEventListener('click', stlViewer.uploadStl);
-ncPreviewButton?.addEventListener('click', ncPreviewController.buildNcPreviewFromUi);
-ncOpacityInput?.addEventListener('input', ncPreviewController.updateNcVisualSettings);
-Object.values(ncColorInputs).forEach((input) => input?.addEventListener('input', ncPreviewController.updateNcVisualSettings));
-ncPreviewController.updateNcOpacityLabel();
+window.addEventListener('pagehide', () => {
+  activeViewers.forEach((viewer) => viewer.dispose());
+  viewerBase.dispose();
+}, { once: true });
 
-if (isPreviewMode(viewerMode)) {
-  if (query.stl) {
-    stlViewer.initAutoloadFromStlId(query.stl);
-  } else {
-    svg3dController.initAutoloadFromPayloadKey(query.payloadKey);
+function getActiveViewers(viewers, parsedQuery, mode) {
+  if (!isPreviewMode(mode)) {
+    return [viewers.svgViewer, viewers.stlViewer, viewers.ncPreviewController];
   }
+
+  return parsedQuery.stl ? [viewers.stlViewer] : [viewers.svgViewer];
 }
 
 function getViewerMode(parsedQuery) {
