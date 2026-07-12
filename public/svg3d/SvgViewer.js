@@ -8,10 +8,6 @@ const EVA_BLUE_COLOR = 0x5f7892;
 const MATERIAL_METALNESS = 0.012;
 const TOP_LAYER_ROUGHNESS = 0.75;
 const GREEN_LAYER_ROUGHNESS = 0.85;
-const PREVIEW_FIT_DISTANCE_FACTOR = 1.68;
-const DEBUG_FIT_DISTANCE_FACTOR = 1.6;
-const PREVIEW_CAMERA_HEIGHT_FACTOR = 0.95;
-const PREVIEW_CAMERA_DEPTH_FACTOR = 0.74;
 const DEFAULT_BASE_MATERIAL_COLOR = 'green';
 const DEFAULT_LAYMENT_THICKNESS_MM = 35;
 const TEXT_OVERLAY_COLOR = '#101010';
@@ -21,7 +17,7 @@ const TEXT_CANVAS_PADDING_MM = 1.2;
 const MIN_TEXT_FONT_SIZE_MM = 0.5;
 
 export function createSvg3dController(ctx) {
-  const { state, scene, camera, controls, shadowReceiver, fileInput, viewerMode, setLoadingState, setErrorState, setSuccessState, isPreviewMode, clearNcPreview } = ctx;
+  const { state, scene, fileInput, viewerMode, setLoadingState, setErrorState, setSuccessState, isPreviewMode, clearNcPreview, disposeMaterial, fitCamera } = ctx;
 async function uploadSvg() {
   if (!fileInput.files?.length) {
     setErrorState('Выберите SVG файл.');
@@ -323,20 +319,6 @@ function buildModel(geometry, visualSettings = {}, texts = []) {
   fitCamera(state.modelGroup);
 }
 
-
-function disposeMaterial(material) {
-  if (!material || typeof material !== 'object') {
-    return;
-  }
-
-  Object.values(material).forEach((value) => {
-    if (value && value.isTexture) {
-      value.dispose();
-    }
-  });
-
-  material.dispose();
-}
 
 
 function buildTextOverlayGroup(geometry, texts = []) {
@@ -648,50 +630,11 @@ function calcContourBounds(points) {
 }
 
 
-function fitCamera(obj) {
-  const box = new THREE.Box3().setFromObject(obj);
-  const size = box.getSize(new THREE.Vector3());
-  const center = box.getCenter(new THREE.Vector3());
-
-  const maxDim = Math.max(size.x, size.y, size.z);
-  const preview = isPreviewMode(viewerMode);
-  const dist = maxDim * (preview ? PREVIEW_FIT_DISTANCE_FACTOR : DEBUG_FIT_DISTANCE_FACTOR);
-
-  if (preview) {
-    const shadowSize = Math.max(size.x, size.z) * 1.8;
-    shadowReceiver.scale.set(shadowSize, shadowSize, 1);
-    shadowReceiver.position.set(center.x, box.min.y - 0.5, center.z);
-
-    const shadowCamExtent = Math.max(size.x, size.y, size.z) * 0.9;
-    mainDirectionalLight.shadow.camera.left = -shadowCamExtent;
-    mainDirectionalLight.shadow.camera.right = shadowCamExtent;
-    mainDirectionalLight.shadow.camera.top = shadowCamExtent;
-    mainDirectionalLight.shadow.camera.bottom = -shadowCamExtent;
-    mainDirectionalLight.shadow.camera.near = 1;
-    mainDirectionalLight.shadow.camera.far = Math.max(1500, maxDim * 10);
-    mainDirectionalLight.shadow.camera.updateProjectionMatrix();
-    mainDirectionalLight.target.position.copy(center);
-  }
-
-  camera.position.set(
-    center.x + dist,
-    center.y + dist * (preview ? PREVIEW_CAMERA_HEIGHT_FACTOR : 0.9),
-    center.z + dist * (preview ? PREVIEW_CAMERA_DEPTH_FACTOR : 0.6)
-  );
-  camera.near = Math.max(0.1, maxDim / 1000);
-  camera.far = Math.max(5000, maxDim * 20);
-  camera.updateProjectionMatrix();
-
-  controls.target.copy(center);
-  controls.update();
-}
 
   return {
     uploadSvg,
     uploadSvgText,
     initAutoloadFromPayloadKey,
-    clearCurrentModel,
-    disposeMaterial,
-    fitCamera
+    clearCurrentModel
   };
 }
