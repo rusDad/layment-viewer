@@ -27,7 +27,7 @@
         </section>
 
         <section class="upload-section">
-          <h3>STL preview PoC</h3>
+          <h3>STL preview</h3>
           <input id="stl-file" type="file" accept=".stl,model/stl,application/sla" />
           <button id="stl-upload">Upload STL</button>
           <div id="stl-status" class="status" role="status" aria-live="polite"></div>
@@ -100,14 +100,7 @@
       </main>
     </div>
 
-    <script type="importmap">
-      {
-        "imports": {
-          "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-          "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-        }
-      }
-    </script>
+   
     <script type="module" src="./app.js"></script>
   </body>
 </html>

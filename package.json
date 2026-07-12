@@ -1,7 +1,7 @@
 {
   "name": "layment-viewer",
   "version": "1.0.0",
-  "description": "MVP SVG to 3D layment viewer",
+  "description": "SVG/STL 3D preview and NC toolpath diagnostics for Layment Designer",
   "main": "server.js",
   "scripts": {
     "dev": "node server.js",
