@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { buildNcMotionRenderBatches } from './NcRenderIndex.js';
 
 export const NC_DEFAULT_COLORS = { G0: '#7fb7ff', G1: '#42d36b', G2: '#ffad33', G3: '#d45cff' };
 
@@ -18,15 +19,14 @@ export function createNcScene(ctx) {
     const box = createNcLaymentBox(dimensions, settings.opacity);
     ncPreviewGroup.add(box);
 
-    const motionGroups = createNcMotionLineGroups(toolpath, dimensions, settings.colors);
-    Object.values(motionGroups).forEach((group) => {
-      if (group) {
-        ncPreviewGroup.add(group);
-      }
+    const motionLineBatches = createNcMotionLineGroups(toolpath, dimensions, settings.colors);
+    motionLineBatches.forEach((batch) => {
+      ncPreviewGroup.add(batch.object);
     });
 
     scene.add(ncPreviewGroup);
     fitCamera(ncPreviewGroup);
+    return { group: ncPreviewGroup, motionLineBatches };
   }
 
   function updateVisualSettings(settings) {
@@ -63,29 +63,16 @@ export function createNcScene(ctx) {
   }
 
   function createNcMotionLineGroups(toolpath, dimensions, colors) {
-    const positionsByMotion = { G0: [], G1: [], G2: [], G3: [] };
+    const renderBatches = buildNcMotionRenderBatches(toolpath, dimensions, mapNcPointToThree);
 
-    toolpath.segments.forEach((segment) => {
-      const positions = positionsByMotion[segment.motion];
-      if (!positions) {
-        return;
-      }
-
-      for (let i = 1; i < segment.points.length; i += 1) {
-        const from = mapNcPointToThree(segment.points[i - 1], dimensions);
-        const to = mapNcPointToThree(segment.points[i], dimensions);
-        positions.push(from.x, from.y, from.z, to.x, to.y, to.z);
-      }
-    });
-
-    return Object.fromEntries(Object.entries(positionsByMotion).map(([motion, positions]) => {
-      if (positions.length === 0) {
+    return Object.entries(renderBatches).flatMap(([motion, batch]) => {
+      if (batch.positions.length === 0) {
         ncLineMaterials[motion] = null;
-        return [motion, null];
+        return [];
       }
 
       const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(batch.positions, 3));
       geometry.computeBoundingBox();
       geometry.computeBoundingSphere();
 
@@ -102,8 +89,10 @@ export function createNcScene(ctx) {
       const lines = new THREE.LineSegments(geometry, material);
       lines.name = `NC ${motion} toolpath`;
       lines.renderOrder = 2;
-      return [motion, lines];
-    }));
+      lines.userData.ncMotion = motion;
+      lines.userData.ncRenderSegmentRefs = batch.renderSegmentRefs;
+      return [{ motion, object: lines, renderSegmentRefs: batch.renderSegmentRefs }];
+    });
   }
 
   function clearNcPreview() {

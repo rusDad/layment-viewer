@@ -126,3 +126,24 @@ assert.deepEqual(nonMotionLines.lines[7].segmentIds, [0], 'supported motion line
 assert.deepEqual(nonMotionLines.lines[8].segmentIds, [], 'unsupported G-code with coordinates should not use prior modal motion');
 
 console.log('OK: NC parser regression passed.');
+
+const { buildNcMotionRenderBatches } = await import('../public/nc/NcRenderIndex.js');
+const renderIndexedToolpath = parseNcToToolpath(`
+G21 G90 G17 G91.1
+G0 X0 Y0 Z0
+G1 X10 Y0
+G2 X20 Y0 I5 J0
+`);
+const renderBatches = buildNcMotionRenderBatches(renderIndexedToolpath, { width: 100, height: 100, thickness: 10 }, (point, dimensions) => ({
+  x: dimensions.width - point.x,
+  y: point.z,
+  z: point.y
+}));
+assert.equal(renderBatches.G1.renderSegmentRefs.length, 1, 'one G1 polyline segment should have one render ref');
+assert.equal(renderBatches.G1.renderSegmentRefs[0].logicalSegmentId, renderIndexedToolpath.segments.find((segment) => segment.motion === 'G1').id);
+assert.equal(renderBatches.G1.renderSegmentRefs[0].sourceLineNumber, 4);
+assert.equal(renderBatches.G1.renderSegmentRefs[0].polylinePartIndex, 0);
+const indexedArc = renderIndexedToolpath.segments.find((segment) => segment.motion === 'G2');
+assert.equal(renderBatches.G2.renderSegmentRefs.length, indexedArc.points.length - 1, 'one logical arc should map each rendered chord to the same segment id');
+assert.ok(renderBatches.G2.renderSegmentRefs.every((ref, index) => ref.logicalSegmentId === indexedArc.id && ref.polylinePartIndex === index));
+assert.equal(renderBatches.G2.positions.length, renderBatches.G2.renderSegmentRefs.length * 6, 'each render ref should correspond to one vertex pair');

@@ -45,7 +45,7 @@ const viewerBase = new ViewerBase({
   isPreviewMode,
   ...threeContext
 });
-const { scene, camera, controls, shadowReceiver } = threeContext;
+const { scene, camera, renderer, controls, shadowReceiver } = threeContext;
 
 const state = { modelGroup: null };
 let ncPreviewController;
@@ -54,6 +54,7 @@ const sharedContext = {
   state,
   scene,
   camera,
+  renderer,
   controls,
   shadowReceiver,
   viewerMode,
