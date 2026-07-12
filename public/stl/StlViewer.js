@@ -28,6 +28,7 @@ export class StlViewer {
 const STL_TOP_FACE_DOT_THRESHOLD = 0.6;
 const STL_TOP_FACE_HEIGHT_EPS_MM = 0.2;
 const STL_LOCAL_TOP_NORMAL = new THREE.Vector3(0, 0, 1);
+const TOP_SKIN_THICKNESS_MM = 4;
 const EVA_GREEN_COLOR = 0x6ea978;
 const MATERIAL_METALNESS = 0.012;
 const TOP_LAYER_ROUGHNESS = 0.75;
