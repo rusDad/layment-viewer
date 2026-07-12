@@ -1,6 +1,7 @@
 import { NC_MAX_FILE_BYTES, parseNcToToolpath } from './nc-parser.mjs';
 import { createNcScene } from './NcScene.js';
 import { NcPickingController } from './NcPickingController.js';
+import { NcSelectionController } from './NcSelectionController.js';
 import { createNcUi, formatNcStatus } from './NcUi.js';
 
 
@@ -34,7 +35,21 @@ export function createNcPreview(ctx) {
   const { viewerMode, isPreviewMode, ncFileInput } = ctx;
   const ncScene = createNcScene(ctx);
   const ncUi = createNcUi(ctx);
-  const ncPicking = new NcPickingController(ctx);
+  let activeToolpath = null;
+  const selection = new NcSelectionController({
+    onHoverChange: (segmentId) => {
+      ncScene.setHoverHighlight(segmentId);
+      ncUi.showHoverInspector(getActiveSegment(segmentId));
+    },
+    onSelectionChange: (segmentId) => {
+      ncScene.setSelectionHighlight(segmentId);
+    }
+  });
+  const ncPicking = new NcPickingController({
+    ...ctx,
+    onHoverSegmentChange: (segmentId) => selection.setHoveredSegmentId(segmentId),
+    onSelectSegmentChange: (segmentId) => selection.setSelectedSegmentId(segmentId)
+  });
 
   async function buildNcPreviewFromUi() {
     if (isPreviewMode(viewerMode)) {
@@ -84,9 +99,19 @@ export function createNcPreview(ctx) {
       return;
     }
 
+    ncPicking.clearPickableLineBatches();
+    selection.clearAll();
+    activeToolpath = toolpath;
     const previewResult = ncScene.buildNcPreview(toolpath, dimensions, ncUi.getNcVisualSettings());
     ncPicking.setPickableLineBatches(previewResult.motionLineBatches);
     ncUi.setNcStatus(formatNcStatus(toolpath));
+  }
+
+  function getActiveSegment(segmentId) {
+    if (!Number.isInteger(segmentId) || !activeToolpath) {
+      return null;
+    }
+    return activeToolpath.segments.find((segment) => segment.id === segmentId) ?? null;
   }
 
   function updateNcVisualSettings() {
@@ -101,10 +126,14 @@ export function createNcPreview(ctx) {
     updateNcOpacityLabel: ncUi.updateNcOpacityLabel,
     clearNcPreview: () => {
       ncPicking.clearPickableLineBatches();
+      selection.clearAll();
+      activeToolpath = null;
       ncScene.clearNcPreview();
     },
     dispose: () => {
       ncPicking.dispose();
+      selection.clearAll();
+      activeToolpath = null;
       ncScene.clearNcPreview();
     }
   };

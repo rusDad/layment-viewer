@@ -22,6 +22,7 @@ const stlLinkEl = document.getElementById('stl-link');
 const ncFileInput = document.getElementById('nc-file');
 const ncPreviewButton = document.getElementById('nc-preview');
 const ncStatusEl = document.getElementById('nc-status');
+const ncHoverInspectorEl = document.getElementById('nc-hover-inspector');
 const ncWidthInput = document.getElementById('nc-width');
 const ncHeightInput = document.getElementById('nc-height');
 const ncThicknessInput = document.getElementById('nc-thickness');
@@ -63,6 +64,7 @@ const sharedContext = {
   stlFileInput,
   ncFileInput,
   ncStatusEl,
+  ncHoverInspectorEl,
   ncWidthInput,
   ncHeightInput,
   ncThicknessInput,

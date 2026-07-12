@@ -219,3 +219,49 @@ body {
 .nc-section button {
   margin-top: 12px;
 }
+
+.nc-hover-inspector {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 3;
+  width: min(320px, calc(100vw - 360px));
+  max-width: 320px;
+  padding: 12px;
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 10px;
+  background: rgba(18, 22, 26, 0.88);
+  color: #eef6ff;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.28);
+  pointer-events: none;
+}
+
+.nc-inspector-line {
+  color: #fff59d;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.nc-inspector-source {
+  margin: 0 0 10px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: #dfe9f2;
+  font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.nc-inspector-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 8px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.nc-inspector-meta dt {
+  color: #9fd2ff;
+}
+
+.nc-inspector-meta dd {
+  margin: 0;
+}

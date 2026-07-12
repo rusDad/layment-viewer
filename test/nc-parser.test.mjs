@@ -147,3 +147,18 @@ const indexedArc = renderIndexedToolpath.segments.find((segment) => segment.moti
 assert.equal(renderBatches.G2.renderSegmentRefs.length, indexedArc.points.length - 1, 'one logical arc should map each rendered chord to the same segment id');
 assert.ok(renderBatches.G2.renderSegmentRefs.every((ref, index) => ref.logicalSegmentId === indexedArc.id && ref.polylinePartIndex === index));
 assert.equal(renderBatches.G2.positions.length, renderBatches.G2.renderSegmentRefs.length * 6, 'each render ref should correspond to one vertex pair');
+
+const { NcSelectionController } = await import('../public/nc/NcSelectionController.js');
+const hoverChanges = [];
+const selectionChanges = [];
+const selectionController = new NcSelectionController({
+  onHoverChange: (segmentId) => hoverChanges.push(segmentId),
+  onSelectionChange: (segmentId) => selectionChanges.push(segmentId)
+});
+selectionController.setSelectedSegmentId(7);
+selectionController.setHoveredSegmentId(12);
+assert.equal(selectionController.selectedSegmentId, 7, 'hover should not clear an existing selected segment');
+selectionController.clearHover();
+assert.equal(selectionController.selectedSegmentId, 7, 'clearing hover should not clear selection');
+assert.deepEqual(hoverChanges, [12, null]);
+assert.deepEqual(selectionChanges, [7]);
