@@ -223,14 +223,14 @@ body {
 .nc-hover-inspector {
   position: absolute;
   bottom: 16px;
-  right: 16px;
+  left: 16px;
   z-index: 3;
   width: min(320px, calc(100vw - 360px));
   max-width: 320px;
   padding: 12px;
   border: 1px solid rgba(255,255,255,0.14);
   border-radius: 10px;
-  background: rgba(18, 22, 26, 0.88);
+  background: rgba(18, 22, 26, 0.76);
   color: #eef6ff;
   box-shadow: 0 8px 24px rgba(0,0,0,0.28);
   pointer-events: none;
