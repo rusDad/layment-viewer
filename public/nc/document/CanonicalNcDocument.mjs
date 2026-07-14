@@ -11,7 +11,7 @@ export const CANONICAL_NC_PROFILE = Object.freeze({
 export function createCanonicalNcDocument({ rawDocument, lines, diagnostics = [] }) {
   const rawLineToCanonicalLineIds = new Map();
   const frozenLines = lines.map((line, index) => {
-    const frozen = Object.freeze({ ...line, currentIndex: index });
+    const frozen = Object.isFrozen(line) && line.currentIndex === index ? line : Object.freeze({ ...line, currentIndex: index });
     for (const rawLineNumber of frozen.sourceOrigin?.rawLineNumbers || []) {
       const ids = rawLineToCanonicalLineIds.get(rawLineNumber) || [];
       ids.push(frozen.lineId);

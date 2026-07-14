@@ -93,7 +93,28 @@ export function updateCanonicalLineNumericField(line, field, value) {
   return Object.freeze({ ...line, end: Object.freeze(end), arc: arc ? Object.freeze({ ...arc, center: Object.freeze(arc.center) }) : arc, feed, text: null });
 }
 
-function replaceCanonicalLine(document, index, line, initialCanonicalText) {
+export function deleteCanonicalLinesCommand({ document, expectedRevision, lineIds, initialCanonicalText } = {}) {
+  if (!document) return fail('delete-not-allowed', 'Canonical document is not initialized.', null, null, undefined, -1);
+  if (expectedRevision != null && expectedRevision !== document.revision) return fail('stale-revision', 'The canonical document changed. Reload the selection before deleting.', null, null, undefined, -1);
+  const inputIds = Array.isArray(lineIds) ? lineIds.filter((id) => typeof id === 'string' && id.length > 0) : [];
+  if (inputIds.length === 0) return fail('empty-selection', 'Select at least one canonical line before deleting.', null, null, undefined, -1);
+  const normalized = [...new Set(inputIds)];
+  const indexById = new Map(document.lines.map((line, index) => [line.lineId, index]));
+  const missing = normalized.filter((id) => !indexById.has(id));
+  if (missing.length > 0) return fail('line-not-found', `Canonical line was not found: ${missing[0]}.`, missing[0], null, undefined, -1);
+  const deletedLineIds = normalized.slice().sort((a, b) => indexById.get(a) - indexById.get(b));
+  const deletedIndexes = deletedLineIds.map((id) => indexById.get(id));
+  const firstAffectedIndex = Math.min(...deletedIndexes);
+  const deletedSet = new Set(deletedLineIds);
+  const deletedLines = deletedLineIds.map((id) => document.lines[indexById.get(id)]);
+  const lines = document.lines.filter((line) => !deletedSet.has(line.lineId));
+  const rebuilt = createCanonicalNcDocument({ rawDocument: document.rawDocument, lines, diagnostics: document.diagnostics });
+  const candidate = Object.freeze({ ...rebuilt, documentId: document.documentId, revision: (document.revision ?? 0) + 1 });
+  const text = serializeCanonicalNcDocument(candidate);
+  return Object.freeze({ ok: true, document: Object.freeze({ ...candidate, dirty: initialCanonicalText == null ? true : text !== initialCanonicalText }), deletedLineIds: Object.freeze(deletedLineIds), deletedLines: Object.freeze(deletedLines), firstAffectedIndex, noOp: false });
+}
+
+export function replaceCanonicalLine(document, index, line, initialCanonicalText) {
   const lines = document.lines.map((candidate, i) => i === index ? line : candidate);
   const rebuilt = createCanonicalNcDocument({ rawDocument: document.rawDocument, lines, diagnostics: document.diagnostics });
   const revision = (document.revision ?? 0) + (serializeCanonicalLine(document.lines[index]) === serializeCanonicalLine(line) ? 0 : 1);

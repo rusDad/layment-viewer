@@ -1622,3 +1622,59 @@ Roadmap status:
 - NC-E1 raw-to-canonical import remains the foundation.
 - NC-E2 canonical execution cache is complete for the viewer/editor foundation.
 - NC-E3 should add single-line token editing on top of `CanonicalNcDocument` and the incremental cache API, without adding UI deletion, multi-selection, undo/redo, query selection, or batch transforms in NC-E2.
+
+## Repository implementation note — NC-E4 delete lines and history
+
+Status: **NC-E4 implemented in Layment Viewer**. The next planned step is **NC-E5 Query-based selection**.
+
+The current editor workspace flow is:
+
+```text
+NcSelection(lineIds)
+  -> numeric edit or delete typed command
+  -> candidate CanonicalNcDocument
+  -> incremental recalculation by stable lineId until semantic convergence
+  -> bounded NcEditHistory transaction
+  -> cache analysis/index update
+  -> current render plus previous affected-geometry overlay
+```
+
+### Selection semantics
+
+Selection identity is the stable canonical `lineId`; display line numbers and canonical array indexes are derived presentation only. The source panel renders `data-line-id` for each canonical row. Plain click replaces selection, Ctrl/Cmd click toggles a line, Shift click selects the current-anchor-to-clicked contiguous canonical range, and Ctrl/Cmd+Shift unions that range with the current selection. Rendered segment clicks resolve `segmentId -> lineId` through the execution cache and then use the same selection command. Hover remains transient and never mutates selection.
+
+Keyboard shortcuts are workspace-scoped and skipped while focus is inside `input`, `textarea`, `select`, or `contenteditable` controls:
+
+- `Delete` deletes the selected canonical lines;
+- `Escape` clears selection;
+- `Ctrl/Cmd+A` selects all canonical lines;
+- `Ctrl/Cmd+Z` performs workspace undo;
+- `Ctrl/Cmd+Shift+Z` and `Ctrl/Cmd+Y` perform workspace redo.
+
+### Delete behavior and empty-document policy
+
+`deleteCanonicalLinesCommand` lives with the canonical editor domain commands. It validates the expected revision, deduplicates and document-orders requested line IDs, rejects unknown IDs atomically, returns deleted line objects/provenance, creates a new immutable canonical document without mutating the raw source, preserves surviving line IDs, increments revision once, and returns the minimum deleted index as `firstAffectedIndex`.
+
+Empty canonical documents are allowed by the current viewer model. Serialization, cache analysis, dirty state and candidate download therefore operate on the empty candidate instead of rejecting all-line deletion.
+
+### Incremental execution after index shifts
+
+Deletion can shift every later canonical index. Incremental execution therefore looks up old entries through `previousCache.byLineId`, compares semantic convergence against the surviving line with the same `lineId`, and reuses a converged suffix by stable line identity. Reused suffix entries are rebased to the new canonical indexes and execution-order metadata while retaining stable segment IDs for unchanged surviving lines. Deleted line/segment IDs disappear from all rebuilt cache indexes.
+
+### History, undo/redo and reset
+
+`public/nc/document/NcEditHistory.mjs` owns the edit stacks. The history limit is **100 transactions** by default. Successful numeric edits, deletions and reset-to-initial operations are stored as document transactions with before/after immutable canonical document references, selection before/after, changed line IDs and the first affected index. Failed and no-op edits do not create transactions, and a new edit after undo clears redo.
+
+Undo and redo transition to the transaction target document through the same incremental execution path used by normal edits; they do not restore DOM or Three.js objects manually and do not re-normalize the raw source. Reset uses the immutable `initialCanonicalDocument`, does not re-read raw text, is undoable, and leaves dirty state false when current canonical serialization equals the initial baseline.
+
+### Impact summary and previous geometry overlay
+
+`public/nc/document/NcEditImpact.mjs` computes the last-operation impact from before/after execution caches rather than DOM text. It reports affected range, recalculation and convergence indexes, line/segment changes, motion counts, bounding boxes, Z/feed ranges, diagnostic deltas, dirty state and history position. Segment diffing uses stable `segmentId` and semantic geometry/feed/motion fields, so index-only movement is not considered a geometry change.
+
+The previous-geometry overlay contains only removed segments plus previous versions of changed segments from the before cache. It is a separate disposable scene layer, does not participate in picking, does not affect camera-fit bounds, and can be hidden with the “Show previous geometry” toggle.
+
+### UI controls and non-goals
+
+The NC source workspace now exposes Delete selected, Undo, Redo, Reset to initial, candidate download and previous-overlay toggle controls. Single-line selection keeps the structured NC-E3 numeric inspector; multi-selection shows a compact selection summary and delete/focus affordances.
+
+NC-E4 intentionally does not add query-based selection, Z/feed/motion predicate filters, batch numeric operations, line insertion, duplication, raw text editing, reordering, server-side revisions, persistent history or a generic editor framework. Those remain future NC-E5+ work.

@@ -113,7 +113,15 @@ export function recalculateCanonicalExecution({ document, previousCache, firstAf
     const oldEntry = previousByLineId.get(newEntry.lineId);
     if (index >= firstAffectedIndex && oldEntry && entriesSemanticallyEqual(newEntry, oldEntry)) {
       convergedAtIndex = index;
-      const suffix = document.lines.slice(index).map((line, offset) => reindexEntry(previousByLineId.get(line.lineId), index + offset)).filter(Boolean);
+      const suffix = [];
+      let suffixExecutionOrder = executionOrder;
+      for (let offset = 0; offset < document.lines.length - index; offset += 1) {
+        const reused = reindexEntry(previousByLineId.get(document.lines[index + offset].lineId), index + offset, suffixExecutionOrder);
+        if (reused) {
+          suffix.push(reused);
+          suffixExecutionOrder += reused.segments.length;
+        }
+      }
       entries.push(...suffix);
       state = entries.at(-1)?.outputState ?? newEntry.outputState;
       break;
@@ -174,10 +182,12 @@ export function executionStatesEqual(a,b){ return Boolean(a&&b) && samePoint3(a.
 function diagnosticsEqual(a,b){ return a.length===b.length && a.every((d,i)=> d.code===b[i].code && d.severity===b[i].severity && d.lineId===b[i].lineId && d.canonicalIndex===b[i].canonicalIndex && d.segmentId===b[i].segmentId); }
 function segmentsEqual(a,b){ return a.length===b.length && a.every((s,i)=> s.segmentId===b[i].segmentId && s.sourceLineId===b[i].sourceLineId && s.motion===b[i].motion && samePoint3(s.start,b[i].start) && samePoint3(s.end,b[i].end) && sameNumber(s.feed,b[i].feed) && sameNumber(s.effectiveZ,b[i].effectiveZ) && ((!s.arc&&!b[i].arc) || (s.arc&&b[i].arc&&samePoint2(s.arc.center,b[i].arc.center)&&s.arc.clockwise===b[i].arc.clockwise&&sameNumber(s.arc.radius,b[i].arc.radius)))); }
 export function entriesSemanticallyEqual(a,b){ return Boolean(a&&b) && a.lineId===b.lineId && a.lineSignature===b.lineSignature && executionStatesEqual(a.inputState,b.inputState) && executionStatesEqual(a.outputState,b.outputState) && segmentsEqual(a.segments,b.segments) && diagnosticsEqual(a.diagnostics,b.diagnostics); }
-function reindexEntry(oldEntry, canonicalIndex) {
+function reindexEntry(oldEntry, canonicalIndex, executionOrder = null) {
   if (!oldEntry) return null;
-  if (oldEntry.canonicalIndex === canonicalIndex && oldEntry.segments.every((segment) => segment.sourceLineIndex === canonicalIndex && segment.sourceLineNumber === canonicalIndex + 1)) return oldEntry;
-  const segments = oldEntry.segments.map((segment) => Object.freeze({ ...segment, sourceLineIndex: canonicalIndex, sourceLineNumber: canonicalIndex + 1, sourceLine: canonicalIndex + 1 }));
+  const baseOrder = executionOrder ?? oldEntry.segments[0]?.executionOrder ?? 0;
+  const unchanged = oldEntry.canonicalIndex === canonicalIndex && oldEntry.segments.every((segment, offset) => segment.sourceLineIndex === canonicalIndex && segment.sourceLineNumber === canonicalIndex + 1 && segment.executionOrder === baseOrder + offset);
+  if (unchanged) return oldEntry;
+  const segments = oldEntry.segments.map((segment, offset) => Object.freeze({ ...segment, sourceLineIndex: canonicalIndex, sourceLineNumber: canonicalIndex + 1, sourceLine: canonicalIndex + 1, executionOrder: baseOrder + offset }));
   const cloned = Object.freeze({ ...oldEntry, canonicalIndex, segments: Object.freeze(segments), executionHash: '' });
   return Object.freeze({ ...cloned, executionHash: executionHash(cloned) });
 }
