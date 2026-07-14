@@ -157,7 +157,7 @@ export class NcPickingController {
     }
 
     const hit = this.pickFromPointerEvent(event);
-    this.onSelectSegmentChange?.(isValidSegmentId(hit?.logicalSegmentId) ? hit.logicalSegmentId : null);
+    this.onSelectSegmentChange?.(isValidSegmentId(hit?.logicalSegmentId) ? hit.logicalSegmentId : null, { ctrlKey: event.ctrlKey, metaKey: event.metaKey, shiftKey: event.shiftKey });
     this.pointerState.clear();
   }
 

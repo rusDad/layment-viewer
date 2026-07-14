@@ -13,6 +13,11 @@ export function createNcUi(ctx) {
     ncSourceFocusButton,
     ncEditInspectorEl,
     ncDownloadNormalizedButton,
+    ncDeleteSelectedButton,
+    ncUndoButton,
+    ncRedoButton,
+    ncResetInitialButton,
+    ncPreviousOverlayToggle,
     ncWidthInput,
     ncHeightInput,
     ncThicknessInput,
@@ -24,17 +29,28 @@ export function createNcUi(ctx) {
     onSourceLineSelect,
     onFocusSelectedSegment,
     onCanonicalFieldCommit,
-    onDownloadNormalized
+    onDownloadNormalized,
+    onDeleteSelected,
+    onUndo,
+    onRedo,
+    onResetToInitial,
+    onClearSelection,
+    onSelectAll,
+    onTogglePreviousOverlay
   } = ctx;
 
   let sourceLines = [];
   let selectedSegmentId = null;
   let selectedLineIndex = null;
+  let selectedLineIds = new Set();
+  let focusLineId = null;
+  let currentSelection = null;
   let sourceScrollHandler = null;
   let activeLineId = null;
   let editReadModel = null;
   let lastEditError = null;
   let lastEditUpdate = null;
+  let actionHandlersBound = false;
 
   function setNcStatus(message, isError = false) {
     if (!ncStatusEl) {
@@ -55,7 +71,8 @@ export function createNcUi(ctx) {
       return null;
     }
 
-    return { width, height, thickness };
+  
+  return { width, height, thickness };
   }
 
   function getNcVisualSettings() {
@@ -108,17 +125,25 @@ export function createNcUi(ctx) {
     sourceLines = Array.isArray(lines) ? lines : [];
     selectedSegmentId = null;
     selectedLineIndex = null;
+    selectedLineIds = new Set();
+    focusLineId = null;
     if (ncSourceListEl && !sourceScrollHandler) {
       sourceScrollHandler = () => renderSourceWindow();
       ncSourceListEl.addEventListener('scroll', sourceScrollHandler);
       ncSourceListEl.addEventListener('click', handleSourceListClick);
       ncSourceListEl.addEventListener('keydown', handleSourceListKeyDown);
     }
-    ncSourceFocusButton?.removeEventListener('click', handleFocusClick);
-    ncDownloadNormalizedButton?.removeEventListener('click', handleDownloadClick);
-    ncSourceFocusButton?.addEventListener('click', handleFocusClick);
-    ncDownloadNormalizedButton?.removeEventListener('click', handleDownloadClick);
-    ncDownloadNormalizedButton?.addEventListener('click', handleDownloadClick);
+    if (!actionHandlersBound) {
+      ncSourceFocusButton?.addEventListener('click', handleFocusClick);
+      ncDeleteSelectedButton?.addEventListener('click', handleDeleteClick);
+      ncUndoButton?.addEventListener('click', handleUndoClick);
+      ncRedoButton?.addEventListener('click', handleRedoClick);
+      ncResetInitialButton?.addEventListener('click', handleResetClick);
+      ncPreviousOverlayToggle?.addEventListener('change', handleOverlayToggle);
+      ncDownloadNormalizedButton?.addEventListener('click', handleDownloadClick);
+      document.addEventListener('keydown', handleWorkspaceKeyDown);
+      actionHandlersBound = true;
+    }
     clearSourceSelection();
     if (ncSourcePanelEl) {
       ncSourcePanelEl.hidden = sourceLines.length === 0;
@@ -162,10 +187,35 @@ export function createNcUi(ctx) {
     renderSourceWindow();
   }
 
+
+  function showSelection(selectionState, toolpath, cache) {
+    currentSelection = selectionState || null;
+    selectedLineIds = new Set(selectionState?.orderedLineIds ?? []);
+    focusLineId = selectionState?.focusLineId ?? null;
+    const focusLine = toolpath?.lines?.find((line) => line.lineId === focusLineId) ?? null;
+    selectedLineIndex = Number.isInteger(focusLine?.index) ? focusLine.index : null;
+    const segmentId = focusLineId ? cache?.lineIdToSegmentIds?.get(focusLineId)?.[0] : null;
+    selectedSegmentId = segmentId ?? null;
+    if (toolpath?.lines?.length) ncSourcePanelEl.hidden = false;
+    if (selectedLineIndex !== null) scrollSourceLineIntoView(selectedLineIndex);
+    renderSelectionDetail(selectionState, toolpath, cache);
+    if (ncDeleteSelectedButton) ncDeleteSelectedButton.disabled = (selectionState?.orderedLineIds?.length ?? 0) === 0;
+    updateFocusButton((selectionState?.orderedLineIds ?? []).some((id) => (cache?.lineIdToSegmentIds?.get(id) ?? []).length > 0));
+    renderSourceWindow();
+  }
+
+  function setSelectionEditState(selectionState, document, cache, toolpath) {
+    if ((selectionState?.orderedLineIds?.length ?? 0) === 1) return;
+    editReadModel = null;
+    activeLineId = null;
+    renderMultiSelectionInspector(selectionState, document, cache, toolpath);
+  }
+
   function clearSourceSelection() {
     selectedSegmentId = null;
     selectedLineIndex = null;
     updateFocusButton(false);
+    if (ncDeleteSelectedButton) ncDeleteSelectedButton.disabled = true;
     if (ncSourcePanelEl) {
       ncSourcePanelEl.hidden = true;
     }
@@ -292,7 +342,14 @@ export function createNcUi(ctx) {
     }
     sourceScrollHandler = null;
     ncSourceFocusButton?.removeEventListener('click', handleFocusClick);
+    ncDeleteSelectedButton?.removeEventListener('click', handleDeleteClick);
+    ncUndoButton?.removeEventListener('click', handleUndoClick);
+    ncRedoButton?.removeEventListener('click', handleRedoClick);
+    ncResetInitialButton?.removeEventListener('click', handleResetClick);
+    ncPreviousOverlayToggle?.removeEventListener('change', handleOverlayToggle);
+    document.removeEventListener('keydown', handleWorkspaceKeyDown);
     ncDownloadNormalizedButton?.removeEventListener('click', handleDownloadClick);
+    actionHandlersBound = false;
     clearSourceSelection();
     clearEditInspector();
     showHoverInspector(null);
@@ -301,10 +358,8 @@ export function createNcUi(ctx) {
   function handleSourceListClick(event) {
     const row = event.target?.closest?.('.nc-source-row');
     if (!row) return;
-    const lineNumber = Number(row.dataset.lineNumber);
-    if (Number.isInteger(lineNumber)) {
-      onSourceLineSelect?.(lineNumber);
-    }
+    const lineId = row.dataset.lineId;
+    if (lineId) onSourceLineSelect?.(lineId, { ctrlKey: event.ctrlKey, metaKey: event.metaKey, shiftKey: event.shiftKey });
   }
 
   function handleSourceListKeyDown(event) {
@@ -312,10 +367,8 @@ export function createNcUi(ctx) {
     const row = event.target?.closest?.('.nc-source-row');
     if (!row) return;
     event.preventDefault();
-    const lineNumber = Number(row.dataset.lineNumber);
-    if (Number.isInteger(lineNumber)) {
-      onSourceLineSelect?.(lineNumber);
-    }
+    const lineId = row.dataset.lineId;
+    if (lineId) onSourceLineSelect?.(lineId, { ctrlKey: event.ctrlKey, metaKey: event.metaKey, shiftKey: event.shiftKey });
   }
 
   function handleFocusClick() {
@@ -323,7 +376,14 @@ export function createNcUi(ctx) {
   }
 
   function handleDownloadClick() {
-    onDownloadNormalized?.();
+    onDownloadNormalized,
+    onDeleteSelected,
+    onUndo,
+    onRedo,
+    onResetToInitial,
+    onClearSelection,
+    onSelectAll,
+    onTogglePreviousOverlay?.();
   }
 
   function updateFocusButton(enabled) {
@@ -392,8 +452,10 @@ export function createNcUi(ctx) {
       const row = document.createElement('div');
       row.className = 'nc-source-row';
       row.setAttribute('role', 'option');
-      row.setAttribute('aria-selected', String(index === selectedLineIndex));
-      row.classList.toggle('is-selected', index === selectedLineIndex);
+      const isSelected = selectedLineIds.has(line.lineId);
+      row.setAttribute('aria-selected', String(isSelected));
+      row.classList.toggle('is-selected', isSelected);
+      row.classList.toggle('is-focus-line', line.lineId === focusLineId);
       row.classList.toggle('is-active-edit', line.lineId === activeLineId);
       const segmentIds = Array.isArray(line.segmentIds) ? line.segmentIds : [];
       row.classList.toggle('has-segment', segmentIds.length > 0);
@@ -418,6 +480,64 @@ export function createNcUi(ctx) {
     ncSourceListEl.append(spacer);
   }
 
+  function setHistoryState(state, dirty = false) {
+    if (ncUndoButton) ncUndoButton.disabled = !(state?.pastCount > 0);
+    if (ncRedoButton) ncRedoButton.disabled = !(state?.futureCount > 0);
+    if (ncResetInitialButton) ncResetInitialButton.disabled = !dirty;
+  }
+
+  function showImpactSummary(impact) {
+    lastEditUpdate = impact ? { firstRecalculatedIndex: impact.firstAffectedIndex, lastRecalculatedIndex: impact.lastRecalculatedIndex, convergedAtIndex: impact.convergenceIndex } : null;
+    if (!ncSourceDetailEl) return;
+    if (!impact) return;
+    const msg = `${impact.label}: lines changed ${impact.changedLineIdsCount}, segments +${impact.addedSegmentCount}/-${impact.removedSegmentCount}/~${impact.changedSegmentCount}, dirty=${impact.dirty}`;
+    setNcStatus(msg, false);
+  }
+
+  function renderSelectionDetail(selectionState, toolpath, cache) {
+    if (!ncSourceDetailEl) return;
+    const ids = selectionState?.orderedLineIds ?? [];
+    if (ids.length === 0) { ncSourceDetailEl.textContent = ''; return; }
+    if (ids.length === 1) {
+      const line = toolpath?.lines?.find((candidate) => candidate.lineId === ids[0]);
+      const seg = line?.segmentIds?.[0] ? toolpath?.segments?.find((segment) => segment.segmentId === line.segmentIds[0]) : null;
+      renderSourceDetail(seg, line);
+      return;
+    }
+    const lines = ids.map((id) => toolpath?.lines?.find((line) => line.lineId === id)).filter(Boolean);
+    const segs = ids.flatMap((id) => (cache?.lineIdToSegmentIds?.get(id) ?? []).map((sid) => cache.segmentById.get(sid)).filter(Boolean));
+    ncSourceDetailEl.textContent = `${ids.length} canonical lines selected · ${segs.length} rendered segments · range ${Math.min(...lines.map(l=>l.number))}..${Math.max(...lines.map(l=>l.number))}`;
+  }
+
+  function renderMultiSelectionInspector(selectionState, document, cache, toolpath) {
+    if (!ncEditInspectorEl) return;
+    const ids = selectionState?.orderedLineIds ?? [];
+    if (ids.length === 0) { ncEditInspectorEl.textContent = 'Select one or more canonical lines.'; return; }
+    const lines = ids.map((id) => document?.lines?.find((line) => line.lineId === id)).filter(Boolean);
+    const segments = ids.flatMap((id) => (cache?.lineIdToSegmentIds?.get(id) ?? []).map((sid) => cache.segmentById.get(sid)).filter(Boolean));
+    ncEditInspectorEl.innerHTML = '';
+    const title = document.createElement('div');
+    title.className = 'nc-source-detail-title';
+    title.textContent = `${ids.length} selected canonical lines`;
+    const meta = document.createElement('dl'); meta.className = 'nc-inspector-meta';
+    appendInspectorRow(meta, 'motion lines', lines.filter((l)=>l.kind==='motion').length);
+    appendInspectorRow(meta, 'non-motion lines', lines.filter((l)=>l.kind!=='motion').length);
+    appendInspectorRow(meta, 'segments', segments.length);
+    appendInspectorRow(meta, 'canonical range', lines.length ? `${Math.min(...lines.map(l=>l.currentIndex))+1}..${Math.max(...lines.map(l=>l.currentIndex))+1}` : 'n/a');
+    ncEditInspectorEl.append(title, meta);
+  }
+
+  function handleWorkspaceKeyDown(event) {
+    if (isEditableTarget(event.target)) return;
+    const mod = event.ctrlKey || event.metaKey;
+    if (event.key === 'Delete') { event.preventDefault(); onDeleteSelected?.(); }
+    else if (event.key === 'Escape') { event.preventDefault(); onClearSelection?.(); }
+    else if (mod && event.key.toLowerCase() === 'a' && ncSourcePanelEl && !ncSourcePanelEl.hidden) { event.preventDefault(); onSelectAll?.(); }
+    else if (mod && event.key.toLowerCase() === 'z' && event.shiftKey) { event.preventDefault(); onRedo?.(); }
+    else if (mod && event.key.toLowerCase() === 'z') { event.preventDefault(); onUndo?.(); }
+    else if (mod && event.key.toLowerCase() === 'y') { event.preventDefault(); onRedo?.(); }
+  }
+
   return {
     setNcStatus,
     getNcDimensionsFromUi,
@@ -432,6 +552,10 @@ export function createNcUi(ctx) {
     setActiveEditLine,
     setDirtyState,
     clearEditInspector,
+    showSelection,
+    setSelectionEditState,
+    setHistoryState,
+    showImpactSummary,
     dispose
   };
 }
@@ -529,3 +653,5 @@ function appendDepthTransition(meta, segment) {
 }
 
 function getSegmentId(segment) { return segment ? (segment.segmentId ?? segment.id ?? null) : null; }
+
+function isEditableTarget(target) { const el = target; return Boolean(el?.closest?.('input, textarea, select, [contenteditable="true"]')); }

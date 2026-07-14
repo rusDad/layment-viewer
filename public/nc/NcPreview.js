@@ -1,7 +1,11 @@
 import { NC_MAX_FILE_BYTES } from './nc-parser.mjs';
 import { importNcToCanonicalDocument } from './import/canonical-normalizer.mjs';
-import { applyUpdateCanonicalNumericFieldCommand, createEditedNcFilename, getCanonicalLineEditReadModel } from './document/CanonicalNcEditor.mjs';
+import { applyUpdateCanonicalNumericFieldCommand, createEditedNcFilename, deleteCanonicalLinesCommand, getCanonicalLineEditReadModel } from './document/CanonicalNcEditor.mjs';
 import { serializeCanonicalNcDocument } from './document/CanonicalNcDocument.mjs';
+import { recalculateCanonicalExecution } from './execution/NcCanonicalExecution.mjs';
+import { analyzeNcExecutionCache } from './execution/NcProgramAnalysis.mjs';
+import { NcEditHistory } from './document/NcEditHistory.mjs';
+import { buildNcEditImpact } from './document/NcEditImpact.mjs';
 import { createNcScene } from './NcScene.js';
 import { NcPickingController } from './NcPickingController.js';
 import { NcSelectionController } from './NcSelectionController.js';
@@ -43,7 +47,11 @@ export function createNcPreview(ctx) {
   let activeDocument = null;
   let activeCache = null;
   let initialCanonicalText = null;
+  let initialCanonicalDocument = null;
   let activeLineId = null;
+  let lastImpact = null;
+  let previousOverlayVisible = true;
+  const history = new NcEditHistory();
   let activeDimensions = null;
   let activeFilename = null;
   let ncUi;
@@ -52,30 +60,28 @@ export function createNcPreview(ctx) {
       ncScene.setHoverHighlight(segmentId);
       ncUi.showHoverInspector(getActiveSegment(segmentId));
     },
-    onSelectionChange: (segmentId, sourceContext = null) => {
-      ncScene.setSelectionHighlight(segmentId);
-      const segment = getActiveSegment(segmentId);
-      if (sourceContext?.sourceLine) {
-        ncUi.showSourceLineSelection(sourceContext.sourceLine, segment);
-        activateCanonicalLine(sourceContext.sourceLine.lineId);
-      } else {
-        ncUi.showSourceSelection(segment);
-        activateCanonicalLine(segment?.sourceLineId ?? null);
-      }
-    },
-    getSourceLineByNumber
+    onSelectionChange: (selectionState) => updateSelectionState(selectionState),
+    getDocumentLineIds: () => activeDocument?.lines?.map((line) => line.lineId) ?? [],
+    getLineIdBySegmentId: (segmentId) => activeCache?.segmentIdToLineId?.get(segmentId) ?? null
   });
   ncUi = createNcUi({
     ...ctx,
-    onSourceLineSelect: (lineNumber) => selection.selectSourceLine(lineNumber),
+    onSourceLineSelect: (lineId, modifiers) => selection.selectLineId(lineId, modifiers, 'source'),
     onFocusSelectedSegment: () => focusSelectedSegment(),
+    onDeleteSelected: () => deleteSelectedLines(),
+    onUndo: () => undo(),
+    onRedo: () => redo(),
+    onResetToInitial: () => resetToInitial(),
+    onClearSelection: () => selection.clearSelection(),
+    onSelectAll: () => selection.selectAll('command'),
+    onTogglePreviousOverlay: (visible) => { previousOverlayVisible = visible; ncScene.setPreviousGeometryOverlayVisible(visible, lastImpact?.previousOverlaySegments); },
     onCanonicalFieldCommit: (command) => commitCanonicalField(command),
     onDownloadNormalized: () => downloadNormalizedCandidate()
   });
   const ncPicking = new NcPickingController({
     ...ctx,
     onHoverSegmentChange: (segmentId) => selection.setHoveredSegmentId(segmentId),
-    onSelectSegmentChange: (segmentId) => selection.selectSegment(segmentId)
+    onSelectSegmentChange: (segmentId, modifiers) => selection.selectSegment(segmentId, modifiers)
   });
 
   async function buildNcPreviewFromUi() {
@@ -125,6 +131,7 @@ export function createNcPreview(ctx) {
       activeDocument = imported.canonicalDocument;
       activeCache = imported.executionCache;
       initialCanonicalText = imported.canonicalText;
+      initialCanonicalDocument = imported.canonicalDocument;
       activeFilename = file.name;
     } catch (err) {
       ncUi.setNcStatus(`Не удалось распарсить NC: ${err instanceof Error ? err.message : String(err)}`, true);
@@ -136,6 +143,7 @@ export function createNcPreview(ctx) {
       activeDocument = null;
       activeCache = null;
       initialCanonicalText = null;
+      initialCanonicalDocument = null;
       activeLineId = null;
       activeDimensions = null;
       activeFilename = null;
@@ -145,6 +153,9 @@ export function createNcPreview(ctx) {
     }
 
     ncPicking.clearPickableLineBatches();
+    history.clear();
+    lastImpact = null;
+    ncScene.clearPreviousGeometryOverlay();
     selection.clearAll();
     activeToolpath = toolpath;
     activeDimensions = dimensions;
@@ -152,6 +163,8 @@ export function createNcPreview(ctx) {
     ncUi.clearEditInspector();
     ncUi.setSourceDocument(toolpath.lines);
     ncUi.setDirtyState(false);
+    ncUi.setHistoryState(history.getState(), false);
+    ncUi.showImpactSummary(null);
     const previewResult = ncScene.buildNcPreview(toolpath, dimensions, ncUi.getNcVisualSettings());
     ncPicking.setPickableLineBatches(previewResult.motionLineBatches);
     ncUi.renderColorLegend(previewResult.colorLegend);
@@ -159,39 +172,110 @@ export function createNcPreview(ctx) {
   }
 
 
+  function updateSelectionState(selectionState) {
+    const selectedLineIds = selectionState.orderedLineIds;
+    const segmentIds = selectedLineIds.flatMap((lineId) => activeCache?.lineIdToSegmentIds?.get(lineId) ?? []);
+    ncScene.setSelectionHighlight(segmentIds);
+    ncUi.showSelection(selectionState, activeToolpath, activeCache);
+    activeLineId = selectedLineIds.length === 1 ? (selectionState.focusLineId ?? selectedLineIds[0]) : null;
+    activateCanonicalLine(activeLineId, { selectionState });
+  }
+
   function activateCanonicalLine(lineId) {
     activeLineId = lineId ?? null;
     if (!activeLineId || !activeDocument || !activeCache) {
-      ncUi.clearEditInspector();
+      ncUi.setSelectionEditState(selection.getSelection(), activeDocument, activeCache, activeToolpath);
       return;
     }
     ncUi.setActiveEditLine(getCanonicalLineEditReadModel({ document: activeDocument, cache: activeCache, lineId: activeLineId }));
     ncUi.setDirtyState(Boolean(activeDocument.dirty));
   }
 
+
   function commitCanonicalField(command) {
-    const result = applyUpdateCanonicalNumericFieldCommand({
-      document: activeDocument,
-      previousCache: activeCache,
-      initialCanonicalText,
-      ...command
-    });
+    const beforeSelection = selection.getSelection();
+    const result = applyUpdateCanonicalNumericFieldCommand({ document: activeDocument, previousCache: activeCache, initialCanonicalText, ...command });
     if (!result.ok) {
       ncUi.setActiveEditLine(getCanonicalLineEditReadModel({ document: activeDocument, cache: activeCache, lineId: command.lineId }), { error: result.error });
       return;
     }
-    activeDocument = result.document;
-    activeCache = result.executionUpdate.cache;
-    activeToolpath = result.analysis;
-    activeLineId = result.changedLineId;
+    if (result.document === activeDocument || result.document.revision === activeDocument?.revision) return;
+    commitWorkspaceTransition({
+      kind: 'update-numeric-field',
+      label: `Change ${command.field} on line ${(activeDocument.lines.findIndex((line) => line.lineId === command.lineId) + 1) || '?'}`,
+      candidateDocument: result.document,
+      executionUpdate: result.executionUpdate,
+      firstAffectedIndex: activeDocument.lines.findIndex((line) => line.lineId === command.lineId),
+      selectionBefore: beforeSelection,
+      selectionAfter: beforeSelection,
+      changedLineIds: [command.lineId]
+    });
+  }
+
+  function deleteSelectedLines() {
+    const beforeSelection = selection.getSelection();
+    const lineIds = beforeSelection.orderedLineIds;
+    const result = deleteCanonicalLinesCommand({ document: activeDocument, expectedRevision: activeDocument?.revision, lineIds, initialCanonicalText });
+    if (!result.ok) { ncUi.setNcStatus(`${result.error.code}: ${result.error.message}`, true); return; }
+    let executionUpdate;
+    try { executionUpdate = recalculateCanonicalExecution({ document: result.document, previousCache: activeCache, firstAffectedIndex: Math.min(result.firstAffectedIndex, result.document.lines.length) }); }
+    catch (err) { ncUi.setNcStatus(`candidate-execution-failed: ${err instanceof Error ? err.message : String(err)}`, true); return; }
+    const fallback = result.document.lines[result.firstAffectedIndex]?.lineId ?? result.document.lines[result.firstAffectedIndex - 1]?.lineId ?? null;
+    const afterSelection = reconcileSelectionAfterDelete(beforeSelection, result.deletedLineIds, result.document, fallback);
+    commitWorkspaceTransition({ kind: 'delete-lines', label: `Delete ${result.deletedLineIds.length} canonical line${result.deletedLineIds.length === 1 ? '' : 's'}`, candidateDocument: result.document, executionUpdate, firstAffectedIndex: result.firstAffectedIndex, selectionBefore: beforeSelection, selectionAfter: afterSelection, changedLineIds: result.deletedLineIds, deletedLineCount: result.deletedLineIds.length });
+  }
+
+  function resetToInitial() {
+    if (!initialCanonicalDocument || !activeDocument || serializeCanonicalNcDocument(activeDocument) === initialCanonicalText) return;
+    const beforeSelection = selection.getSelection();
+    const candidateDocument = Object.freeze({ ...initialCanonicalDocument, revision: (activeDocument.revision ?? 0) + 1, dirty: false });
+    const executionUpdate = recalculateCanonicalExecution({ document: candidateDocument, previousCache: activeCache, firstAffectedIndex: 0 });
+    const afterSelection = reconcileSelectionToDocument(beforeSelection, candidateDocument);
+    commitWorkspaceTransition({ kind: 'reset-to-initial', label: 'Reset to initial canonical document', candidateDocument, executionUpdate, firstAffectedIndex: 0, selectionBefore: beforeSelection, selectionAfter: afterSelection, changedLineIds: activeDocument.lines.map((line) => line.lineId) });
+  }
+
+  function commitWorkspaceTransition({ kind, label, candidateDocument, executionUpdate, firstAffectedIndex, selectionBefore, selectionAfter, changedLineIds = [], deletedLineCount = 0, pushHistory = true }) {
+    const beforeDocument = activeDocument;
+    const beforeCache = activeCache;
+    const analysis = analyzeNcExecutionCache(executionUpdate.cache, candidateDocument);
+    analysis.canonicalDocument = candidateDocument;
+    analysis.rawDocument = candidateDocument.rawDocument;
+    analysis.canonicalText = serializeCanonicalNcDocument(candidateDocument);
+    analysis.executionCache = executionUpdate.cache;
+    activeDocument = candidateDocument;
+    activeCache = executionUpdate.cache;
+    activeToolpath = analysis;
+    activeLineId = selectionAfter?.orderedLineIds?.length === 1 ? selectionAfter.focusLineId : null;
+    if (pushHistory) history.push({ kind, label, beforeDocument, afterDocument: candidateDocument, firstAffectedIndex, selectionBefore, selectionAfter, changedLineIds });
+    lastImpact = buildNcEditImpact({ beforeDocument, afterDocument: candidateDocument, beforeCache, afterCache: activeCache, executionUpdate, operation: { kind, label, selectedLineCount: selectionBefore?.orderedLineIds?.length ?? 0, deletedLineCount, firstAffectedIndex }, dirty: candidateDocument.dirty, historyState: history.getState() });
     ncUi.setSourceDocument(activeToolpath.lines);
-    ncUi.setActiveEditLine(getCanonicalLineEditReadModel({ document: activeDocument, cache: activeCache, lineId: activeLineId }), { executionUpdate: result.executionUpdate });
-    ncUi.setDirtyState(result.dirty);
+    selection.setSelection(selectionAfter);
+    ncUi.setDirtyState(Boolean(activeDocument.dirty));
+    ncUi.setHistoryState(history.getState(), Boolean(activeDocument.dirty));
+    ncUi.showImpactSummary(lastImpact);
     const previewResult = ncScene.buildNcPreview(activeToolpath, activeDimensions, ncUi.getNcVisualSettings());
     ncPicking.setPickableLineBatches(previewResult.motionLineBatches);
+    ncScene.setPreviousGeometryOverlay(lastImpact.previousOverlaySegments, { visible: previousOverlayVisible });
     ncUi.renderColorLegend(previewResult.colorLegend);
-    ncUi.setNcStatus(formatNcStatus(activeToolpath, `Canonical edit applied. Recalculated ${result.executionUpdate.firstRecalculatedIndex + 1}..${result.executionUpdate.lastRecalculatedIndex + 1}.`));
+    updateSelectionState(selection.getSelection());
+    ncUi.setNcStatus(formatNcStatus(activeToolpath, `${label}. Recalculated ${executionUpdate.firstRecalculatedIndex + 1}..${executionUpdate.lastRecalculatedIndex + 1}.`));
   }
+
+  function undo() { applyHistoryTransition('undo'); }
+  function redo() { applyHistoryTransition('redo'); }
+  function applyHistoryTransition(direction) {
+    const tx = direction === 'undo' ? history.peekUndo() : history.peekRedo();
+    if (!tx) { ncUi.setNcStatus(direction === 'undo' ? 'history-empty: There is no edit to undo.' : 'redo-empty: There is no edit to redo.', true); return; }
+    const target = direction === 'undo' ? tx.beforeDocument : tx.afterDocument;
+    const targetSelection = direction === 'undo' ? tx.selectionBefore : tx.selectionAfter;
+    let executionUpdate;
+    try { executionUpdate = recalculateCanonicalExecution({ document: target, previousCache: activeCache, firstAffectedIndex: Math.min(tx.firstAffectedIndex ?? 0, target.lines.length) }); }
+    catch (err) { ncUi.setNcStatus(`history-transition-failed: ${err instanceof Error ? err.message : String(err)}`, true); return; }
+    const moved = direction === 'undo' ? history.moveUndo() : history.moveRedo();
+    if (!moved.ok) { ncUi.setNcStatus(`${moved.error.code}: ${moved.error.message}`, true); return; }
+    commitWorkspaceTransition({ kind: direction, label: `${direction === 'undo' ? 'Undo' : 'Redo'} ${tx.label}`, candidateDocument: target, executionUpdate, firstAffectedIndex: tx.firstAffectedIndex ?? 0, selectionBefore: selection.getSelection(), selectionAfter: reconcileSelectionToDocument(targetSelection, target), changedLineIds: tx.changedLineIds, pushHistory: false });
+  }
+
 
   function downloadNormalizedCandidate() {
     if (!activeDocument) return;
@@ -220,7 +304,7 @@ export function createNcPreview(ctx) {
   }
 
   function focusSelectedSegment() {
-    ncScene.focusSelectedSegment();
+    if (!ncScene.focusSelectedSegment()) ncUi.setNcStatus('Selected canonical lines do not produce rendered geometry.', true);
   }
 
   function getActiveSegment(segmentId) {
@@ -231,10 +315,25 @@ export function createNcPreview(ctx) {
   }
 
   function getSourceLineByNumber(lineNumber) {
-    if (!Number.isInteger(lineNumber) || !activeToolpath) {
-      return null;
-    }
+    if (!Number.isInteger(lineNumber) || !activeToolpath) return null;
     return activeToolpath.lines.find((line) => line.number === lineNumber) ?? null;
+  }
+
+  function reconcileSelectionAfterDelete(beforeSelection, deletedLineIds, document, fallbackLineId) {
+    const deleted = new Set(deletedLineIds);
+    const order = document.lines.map((line) => line.lineId);
+    let ids = beforeSelection.orderedLineIds.filter((id) => !deleted.has(id) && order.includes(id));
+    if (ids.length === 0 && fallbackLineId) ids = [fallbackLineId];
+    const focus = ids.includes(beforeSelection.focusLineId) ? beforeSelection.focusLineId : ids[0] ?? null;
+    return { orderedLineIds: ids, anchorLineId: ids.includes(beforeSelection.anchorLineId) ? beforeSelection.anchorLineId : focus, focusLineId: focus, origin: 'command' };
+  }
+
+  function reconcileSelectionToDocument(sourceSelection, document) {
+    const order = document.lines.map((line) => line.lineId);
+    const ids = (sourceSelection?.orderedLineIds ?? []).filter((id) => order.includes(id));
+    const selected = ids.length ? ids : (order[0] ? [order[0]] : []);
+    const focus = selected.includes(sourceSelection?.focusLineId) ? sourceSelection.focusLineId : selected[0] ?? null;
+    return { orderedLineIds: selected, anchorLineId: selected.includes(sourceSelection?.anchorLineId) ? sourceSelection.anchorLineId : focus, focusLineId: focus, origin: 'history' };
   }
 
   function updateNcVisualSettings() {
@@ -264,9 +363,14 @@ export function createNcPreview(ctx) {
       activeDocument = null;
       activeCache = null;
       initialCanonicalText = null;
+      initialCanonicalDocument = null;
       activeLineId = null;
       activeDimensions = null;
       activeFilename = null;
+      history.clear();
+      lastImpact = null;
+      ncUi.showImpactSummary(null);
+      ncUi.setHistoryState(history.getState(), false);
       ncUi.clearEditInspector();
       ncScene.clearNcPreview();
     },
@@ -278,9 +382,14 @@ export function createNcPreview(ctx) {
       activeDocument = null;
       activeCache = null;
       initialCanonicalText = null;
+      initialCanonicalDocument = null;
       activeLineId = null;
       activeDimensions = null;
       activeFilename = null;
+      history.clear();
+      lastImpact = null;
+      ncUi.showImpactSummary(null);
+      ncUi.setHistoryState(history.getState(), false);
       ncUi.clearEditInspector();
       ncScene.clearNcPreview();
     }

@@ -42,6 +42,13 @@
           </div>
           <label class="field field-full range-field"><span>box opacity <output id="nc-opacity-value">0.30</output></span><input id="nc-opacity" type="range" min="0" max="1" step="0.01" value="0.30" /></label>
           <button id="nc-preview" type="button">Build NC preview</button>
+          <div class="nc-edit-actions">
+            <button id="nc-delete-selected" type="button" disabled>Delete selected</button>
+            <button id="nc-undo" type="button" disabled>Undo</button>
+            <button id="nc-redo" type="button" disabled>Redo</button>
+            <button id="nc-reset-initial" type="button" disabled>Reset to initial</button>
+            <label class="nc-overlay-toggle"><input id="nc-previous-overlay" type="checkbox" checked /> Show previous geometry</label>
+          </div>
           <button id="nc-download-normalized" type="button" disabled>Download normalized NC</button>
           <div id="nc-status" class="status" role="status" aria-live="polite"></div>
           <section id="nc-source-panel" class="nc-source-panel" aria-label="NC source" hidden>
