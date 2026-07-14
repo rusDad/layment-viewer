@@ -31,7 +31,7 @@ export class NcSelectionController {
   selectSourceLine(lineNumber) {
     const normalizedLineNumber = normalizeLineNumber(lineNumber);
     const line = normalizedLineNumber === null ? null : this.getSourceLineByNumber?.(normalizedLineNumber) ?? null;
-    const segmentIds = Array.isArray(line?.segmentIds) ? line.segmentIds.filter(Number.isInteger) : [];
+    const segmentIds = Array.isArray(line?.segmentIds) ? line.segmentIds.filter(isValidSegmentId) : [];
     const segmentId = segmentIds[0] ?? null;
 
     if (this.selectedSourceLineNumber === normalizedLineNumber && this.selectedSegmentId === segmentId) return;
@@ -61,7 +61,11 @@ export class NcSelectionController {
 }
 
 function normalizeSegmentId(segmentId) {
-  return Number.isInteger(segmentId) ? segmentId : null;
+  return isValidSegmentId(segmentId) ? segmentId : null;
+}
+
+function isValidSegmentId(segmentId) {
+  return Number.isInteger(segmentId) || (typeof segmentId === 'string' && segmentId.length > 0);
 }
 
 function normalizeLineNumber(lineNumber) {
