@@ -211,12 +211,24 @@ export function createNcUi(ctx) {
     renderSourceWindow();
   }
 
-  function setSelectionEditState(selectionState, document, cache, toolpath) {
-    if ((selectionState?.orderedLineIds?.length ?? 0) === 1) return;
-    editReadModel = null;
-    activeLineId = null;
-    renderMultiSelectionInspector(selectionState, document, cache, toolpath);
-  }
+  function setSelectionEditState(
+     selectionState,
+     canonicalDocument,
+     cache,
+     toolpath
+   ) {
+     if ((selectionState?.orderedLineIds?.length ?? 0) === 1) return;
+    
+     editReadModel = null;
+     activeLineId = null;
+    
+     renderMultiSelectionInspector(
+       selectionState,
+       canonicalDocument,
+       cache,
+       toolpath
+     );
+  } 
 
   function clearSourceSelection() {
     selectedSegmentId = null;
@@ -383,15 +395,30 @@ export function createNcUi(ctx) {
     onFocusSelectedSegment?.();
   }
 
+  function handleDeleteClick() {
+  onDeleteSelected?.();
+  }
+  
+  function handleUndoClick() {
+    onUndo?.();
+  }
+  
+  function handleRedoClick() {
+    onRedo?.();
+  }
+  
+  function handleResetClick() {
+    onResetToInitial?.();
+  }
+  
+  function handleOverlayToggle() {
+    onTogglePreviousOverlay?.(
+      Boolean(ncPreviousOverlayToggle?.checked)
+    );
+  }
+  
   function handleDownloadClick() {
-    onDownloadNormalized,
-    onDeleteSelected,
-    onUndo,
-    onRedo,
-    onResetToInitial,
-    onClearSelection,
-    onSelectAll,
-    onTogglePreviousOverlay?.();
+    onDownloadNormalized?.();
   }
 
   function updateFocusButton(enabled) {
@@ -517,21 +544,47 @@ export function createNcUi(ctx) {
     ncSourceDetailEl.textContent = `${ids.length} canonical lines selected · ${segs.length} rendered segments · range ${Math.min(...lines.map(l=>l.number))}..${Math.max(...lines.map(l=>l.number))}`;
   }
 
-  function renderMultiSelectionInspector(selectionState, document, cache, toolpath) {
+ function renderMultiSelectionInspector(
+    selectionState,
+    canonicalDocument,
+    cache,
+    toolpath
+  ) {
     if (!ncEditInspectorEl) return;
     const ids = selectionState?.orderedLineIds ?? [];
-    if (ids.length === 0) { ncEditInspectorEl.textContent = 'Select one or more canonical lines.'; return; }
-    const lines = ids.map((id) => document?.lines?.find((line) => line.lineId === id)).filter(Boolean);
-    const segments = ids.flatMap((id) => (cache?.lineIdToSegmentIds?.get(id) ?? []).map((sid) => cache.segmentById.get(sid)).filter(Boolean));
+    if (ids.length === 0) {
+      ncEditInspectorEl.textContent = 'Select one or more canonical lines.';
+      return;
+    }
+    const lines = ids
+      .map((id) =>
+        canonicalDocument?.lines?.find((line) => line.lineId === id)
+      )
+      .filter(Boolean);
+    const segments = ids.flatMap((id) =>
+      (cache?.lineIdToSegmentIds?.get(id) ?? [])
+        .map((segmentId) => cache.segmentById.get(segmentId))
+        .filter(Boolean)
+    );
     ncEditInspectorEl.innerHTML = '';
+    // Теперь это глобальный DOM document.
     const title = document.createElement('div');
     title.className = 'nc-source-detail-title';
     title.textContent = `${ids.length} selected canonical lines`;
-    const meta = document.createElement('dl'); meta.className = 'nc-inspector-meta';
-    appendInspectorRow(meta, 'motion lines', lines.filter((l)=>l.kind==='motion').length);
-    appendInspectorRow(meta, 'non-motion lines', lines.filter((l)=>l.kind!=='motion').length);
+    const meta = document.createElement('dl');
+    meta.className = 'nc-inspector-meta';
+    appendInspectorRow(
+      meta,
+      'motion lines',
+      lines.filter((line) => line.kind === 'motion').length
+    );
+    appendInspectorRow(
+      meta,
+      'non-motion lines',
+      lines.filter((line) => line.kind !== 'motion').length
+    );
     appendInspectorRow(meta, 'segments', segments.length);
-    appendInspectorRow(meta, 'canonical range', lines.length ? `${Math.min(...lines.map(l=>l.currentIndex))+1}..${Math.max(...lines.map(l=>l.currentIndex))+1}` : 'n/a');
+
     ncEditInspectorEl.append(title, meta);
   }
 
