@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>STL Upload — Layment Viewer</title>
+    <link rel="stylesheet" href="../style.css" />
+    <link rel="icon" href="../favicon.ico" sizes="any" />
+    <script type="importmap">
+     {
+       "imports": {
+         "three": "https://cdn.jsdelivr.net/npm/three@0.185.0/build/three.module.js",
+         "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.0/examples/jsm/"
+       }
+     }
+     </script>
+  </head>
+  <body>
+    <main class="standalone-page stl-upload-page">
+      <nav class="page-nav" aria-label="Viewer navigation">
+        <a href="../">← SVG viewer</a>
+      </nav>
+
+      <section class="standalone-card upload-section">
+        <h1>STL preview upload</h1>
+        <p class="section-hint">Загрузите .stl файл, чтобы получить постоянную ссылку на preview, пока файл существует на сервере.</p>
+        <input id="stl-file" type="file" accept=".stl,model/stl,application/sla" />
+        <button id="stl-upload" type="button">Upload STL</button>
+        <div id="stl-status" class="status" role="status" aria-live="polite"></div>
+        <div id="stl-link" class="status status-link"></div>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

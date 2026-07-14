@@ -20,8 +20,8 @@ export class StlViewer {
 
   dispose() {
     this.ctx.stlUploadButton?.removeEventListener('click', this.uploadStl);
-    this.ctx.clearCurrentModel();
-    this.ctx.clearNcPreview();
+    this.ctx.clearCurrentModel?.();
+    this.ctx.clearNcPreview?.();
   }
 }
 
@@ -36,7 +36,7 @@ const GREEN_LAYER_ROUGHNESS = 0.85;
 const TOP_LAYER_COLOR = 0x4a4a4a;
 
 export function createStlViewer(ctx) {
-  const { state, scene, stlFileInput, viewerMode, isPreviewMode, setErrorState, setSuccessState, setLoadingState, setStlUploadState, setStlUploadLink, buildPreviewUrl, clearCurrentModel, clearNcPreview, disposeMaterial, fitCamera } = ctx;
+  const { state, scene, stlFileInput, viewerMode, isPreviewMode, setErrorState, setSuccessState, setLoadingState, setStlUploadState, setStlUploadLink, buildPreviewUrl, clearCurrentModel, clearNcPreview = () => {}, disposeMaterial, fitCamera } = ctx;
 async function uploadStl() {
   if (!stlFileInput?.files?.length) {
     setStlUploadState('Выберите STL файл.', true);
