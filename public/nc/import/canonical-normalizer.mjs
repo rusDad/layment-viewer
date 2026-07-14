@@ -18,7 +18,7 @@ import { analyzeNcExecutionCache } from '../execution/NcProgramAnalysis.mjs';
 const MOTIONS = new Set(['G0', 'G1', 'G2', 'G3']);
 const LINEAR = new Set(['G0', 'G1']);
 const ARC = new Set(['G2', 'G3']);
-const PRESERVED_G_CODES = new Set(['G17', 'G20', 'G21', 'G90', 'G91', 'G90.1', 'G91.1']);
+const PRESERVED_G_CODES = new Set(['G17', 'G20', 'G21','G40','G49', 'G54', 'G80', 'G90', 'G91', 'G90.1', 'G91.1']);
 const PRESERVED_M_CODES = new Set(['M0', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M30']);
 
 export function importNcToCanonicalDocument(text, options = {}) {
