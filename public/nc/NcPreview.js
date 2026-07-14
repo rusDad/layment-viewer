@@ -1,5 +1,7 @@
 import { NC_MAX_FILE_BYTES } from './nc-parser.mjs';
 import { importNcToCanonicalDocument } from './import/canonical-normalizer.mjs';
+import { applyUpdateCanonicalNumericFieldCommand, createEditedNcFilename, getCanonicalLineEditReadModel } from './document/CanonicalNcEditor.mjs';
+import { serializeCanonicalNcDocument } from './document/CanonicalNcDocument.mjs';
 import { createNcScene } from './NcScene.js';
 import { NcPickingController } from './NcPickingController.js';
 import { NcSelectionController } from './NcSelectionController.js';
@@ -38,6 +40,12 @@ export function createNcPreview(ctx) {
   const { viewerMode, isPreviewMode, ncFileInput } = ctx;
   const ncScene = createNcScene(ctx);
   let activeToolpath = null;
+  let activeDocument = null;
+  let activeCache = null;
+  let initialCanonicalText = null;
+  let activeLineId = null;
+  let activeDimensions = null;
+  let activeFilename = null;
   let ncUi;
   const selection = new NcSelectionController({
     onHoverChange: (segmentId) => {
@@ -49,8 +57,10 @@ export function createNcPreview(ctx) {
       const segment = getActiveSegment(segmentId);
       if (sourceContext?.sourceLine) {
         ncUi.showSourceLineSelection(sourceContext.sourceLine, segment);
+        activateCanonicalLine(sourceContext.sourceLine.lineId);
       } else {
         ncUi.showSourceSelection(segment);
+        activateCanonicalLine(segment?.sourceLineId ?? null);
       }
     },
     getSourceLineByNumber
@@ -58,7 +68,9 @@ export function createNcPreview(ctx) {
   ncUi = createNcUi({
     ...ctx,
     onSourceLineSelect: (lineNumber) => selection.selectSourceLine(lineNumber),
-    onFocusSelectedSegment: () => focusSelectedSegment()
+    onFocusSelectedSegment: () => focusSelectedSegment(),
+    onCanonicalFieldCommit: (command) => commitCanonicalField(command),
+    onDownloadNormalized: () => downloadNormalizedCandidate()
   });
   const ncPicking = new NcPickingController({
     ...ctx,
@@ -110,12 +122,24 @@ export function createNcPreview(ctx) {
         return;
       }
       toolpath = imported.toolpath;
+      activeDocument = imported.canonicalDocument;
+      activeCache = imported.executionCache;
+      initialCanonicalText = imported.canonicalText;
+      activeFilename = file.name;
     } catch (err) {
       ncUi.setNcStatus(`Не удалось распарсить NC: ${err instanceof Error ? err.message : String(err)}`, true);
       return;
     }
 
     if (toolpath.segments.length === 0) {
+      activeToolpath = null;
+      activeDocument = null;
+      activeCache = null;
+      initialCanonicalText = null;
+      activeLineId = null;
+      activeDimensions = null;
+      activeFilename = null;
+      ncUi.clearEditInspector();
       ncUi.setNcStatus(formatNcStatus(toolpath, 'Движения G0/G1/G2/G3 не найдены.'), true);
       return;
     }
@@ -123,11 +147,64 @@ export function createNcPreview(ctx) {
     ncPicking.clearPickableLineBatches();
     selection.clearAll();
     activeToolpath = toolpath;
+    activeDimensions = dimensions;
+    activeLineId = null;
+    ncUi.clearEditInspector();
     ncUi.setSourceDocument(toolpath.lines);
+    ncUi.setDirtyState(false);
     const previewResult = ncScene.buildNcPreview(toolpath, dimensions, ncUi.getNcVisualSettings());
     ncPicking.setPickableLineBatches(previewResult.motionLineBatches);
     ncUi.renderColorLegend(previewResult.colorLegend);
     ncUi.setNcStatus(formatNcStatus(toolpath, 'Normalized canonical NC document opened.'));
+  }
+
+
+  function activateCanonicalLine(lineId) {
+    activeLineId = lineId ?? null;
+    if (!activeLineId || !activeDocument || !activeCache) {
+      ncUi.clearEditInspector();
+      return;
+    }
+    ncUi.setActiveEditLine(getCanonicalLineEditReadModel({ document: activeDocument, cache: activeCache, lineId: activeLineId }));
+    ncUi.setDirtyState(Boolean(activeDocument.dirty));
+  }
+
+  function commitCanonicalField(command) {
+    const result = applyUpdateCanonicalNumericFieldCommand({
+      document: activeDocument,
+      previousCache: activeCache,
+      initialCanonicalText,
+      ...command
+    });
+    if (!result.ok) {
+      ncUi.setActiveEditLine(getCanonicalLineEditReadModel({ document: activeDocument, cache: activeCache, lineId: command.lineId }), { error: result.error });
+      return;
+    }
+    activeDocument = result.document;
+    activeCache = result.executionUpdate.cache;
+    activeToolpath = result.analysis;
+    activeLineId = result.changedLineId;
+    ncUi.setSourceDocument(activeToolpath.lines);
+    ncUi.setActiveEditLine(getCanonicalLineEditReadModel({ document: activeDocument, cache: activeCache, lineId: activeLineId }), { executionUpdate: result.executionUpdate });
+    ncUi.setDirtyState(result.dirty);
+    const previewResult = ncScene.buildNcPreview(activeToolpath, activeDimensions, ncUi.getNcVisualSettings());
+    ncPicking.setPickableLineBatches(previewResult.motionLineBatches);
+    ncUi.renderColorLegend(previewResult.colorLegend);
+    ncUi.setNcStatus(formatNcStatus(activeToolpath, `Canonical edit applied. Recalculated ${result.executionUpdate.firstRecalculatedIndex + 1}..${result.executionUpdate.lastRecalculatedIndex + 1}.`));
+  }
+
+  function downloadNormalizedCandidate() {
+    if (!activeDocument) return;
+    const text = serializeCanonicalNcDocument(activeDocument);
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = createEditedNcFilename(activeFilename, Boolean(activeDocument.dirty));
+    document.body.append(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   }
 
   function selectSegment(segmentId) {
@@ -184,6 +261,13 @@ export function createNcPreview(ctx) {
       ncUi.clearSourceSelection();
       ncUi.renderColorLegend(null);
       activeToolpath = null;
+      activeDocument = null;
+      activeCache = null;
+      initialCanonicalText = null;
+      activeLineId = null;
+      activeDimensions = null;
+      activeFilename = null;
+      ncUi.clearEditInspector();
       ncScene.clearNcPreview();
     },
     dispose: () => {
@@ -191,6 +275,13 @@ export function createNcPreview(ctx) {
       selection.clearAll();
       ncUi.dispose();
       activeToolpath = null;
+      activeDocument = null;
+      activeCache = null;
+      initialCanonicalText = null;
+      activeLineId = null;
+      activeDimensions = null;
+      activeFilename = null;
+      ncUi.clearEditInspector();
       ncScene.clearNcPreview();
     }
   };

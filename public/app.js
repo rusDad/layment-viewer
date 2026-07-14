@@ -27,6 +27,8 @@ const ncSourcePanelEl = document.getElementById('nc-source-panel');
 const ncSourceListEl = document.getElementById('nc-source-list');
 const ncSourceDetailEl = document.getElementById('nc-source-detail');
 const ncSourceFocusButton = document.getElementById('nc-source-focus');
+const ncEditInspectorEl = document.getElementById('nc-edit-inspector');
+const ncDownloadNormalizedButton = document.getElementById('nc-download-normalized');
 const ncWidthInput = document.getElementById('nc-width');
 const ncHeightInput = document.getElementById('nc-height');
 const ncThicknessInput = document.getElementById('nc-thickness');
@@ -75,6 +77,8 @@ const sharedContext = {
   ncSourceListEl,
   ncSourceDetailEl,
   ncSourceFocusButton,
+  ncEditInspectorEl,
+  ncDownloadNormalizedButton,
   ncWidthInput,
   ncHeightInput,
   ncThicknessInput,

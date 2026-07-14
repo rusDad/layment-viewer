@@ -11,6 +11,8 @@ export function createNcUi(ctx) {
     ncSourceListEl,
     ncSourceDetailEl,
     ncSourceFocusButton,
+    ncEditInspectorEl,
+    ncDownloadNormalizedButton,
     ncWidthInput,
     ncHeightInput,
     ncThicknessInput,
@@ -20,13 +22,19 @@ export function createNcUi(ctx) {
     ncColorLegendEl,
     ncColorInputs,
     onSourceLineSelect,
-    onFocusSelectedSegment
+    onFocusSelectedSegment,
+    onCanonicalFieldCommit,
+    onDownloadNormalized
   } = ctx;
 
   let sourceLines = [];
   let selectedSegmentId = null;
   let selectedLineIndex = null;
   let sourceScrollHandler = null;
+  let activeLineId = null;
+  let editReadModel = null;
+  let lastEditError = null;
+  let lastEditUpdate = null;
 
   function setNcStatus(message, isError = false) {
     if (!ncStatusEl) {
@@ -107,7 +115,10 @@ export function createNcUi(ctx) {
       ncSourceListEl.addEventListener('keydown', handleSourceListKeyDown);
     }
     ncSourceFocusButton?.removeEventListener('click', handleFocusClick);
+    ncDownloadNormalizedButton?.removeEventListener('click', handleDownloadClick);
     ncSourceFocusButton?.addEventListener('click', handleFocusClick);
+    ncDownloadNormalizedButton?.removeEventListener('click', handleDownloadClick);
+    ncDownloadNormalizedButton?.addEventListener('click', handleDownloadClick);
     clearSourceSelection();
     if (ncSourcePanelEl) {
       ncSourcePanelEl.hidden = sourceLines.length === 0;
@@ -167,6 +178,112 @@ export function createNcUi(ctx) {
     }
   }
 
+
+  function setActiveEditLine(readModel, options = {}) {
+    editReadModel = readModel || null;
+    activeLineId = readModel?.lineId ?? null;
+    lastEditError = options.error ?? null;
+    lastEditUpdate = options.executionUpdate ?? lastEditUpdate;
+    if (Number.isInteger(readModel?.canonicalIndex)) {
+      selectedLineIndex = readModel.canonicalIndex;
+      scrollSourceLineIntoView(readModel.canonicalIndex);
+    }
+    if (ncSourcePanelEl && sourceLines.length > 0) ncSourcePanelEl.hidden = false;
+    renderEditInspector();
+    renderSourceWindow();
+  }
+
+  function setDirtyState(dirty) {
+    if (ncDownloadNormalizedButton) {
+      ncDownloadNormalizedButton.disabled = sourceLines.length === 0;
+      ncDownloadNormalizedButton.textContent = dirty ? 'Download edited NC' : 'Download normalized NC';
+    }
+  }
+
+  function clearEditInspector() {
+    activeLineId = null;
+    editReadModel = null;
+    lastEditError = null;
+    lastEditUpdate = null;
+    if (ncEditInspectorEl) ncEditInspectorEl.innerHTML = '';
+    if (ncDownloadNormalizedButton) ncDownloadNormalizedButton.disabled = sourceLines.length === 0;
+  }
+
+  function renderEditInspector() {
+    if (!ncEditInspectorEl) return;
+    ncEditInspectorEl.innerHTML = '';
+    if (!editReadModel?.line) {
+      ncEditInspectorEl.textContent = 'Select a canonical line to edit numeric motion fields.';
+      return;
+    }
+    const title = document.createElement('div');
+    title.className = 'nc-source-detail-title';
+    title.textContent = `Active line ${editReadModel.canonicalIndex + 1} · ${editReadModel.line.motion || editReadModel.line.kind}`;
+    const source = document.createElement('pre');
+    source.className = 'nc-inspector-source';
+    source.textContent = editReadModel.serializedLine;
+    ncEditInspectorEl.append(title, source);
+
+    const meta = document.createElement('dl');
+    meta.className = 'nc-inspector-meta';
+    appendInspectorRow(meta, 'lineId', editReadModel.lineId);
+    appendInspectorRow(meta, 'source line', (editReadModel.sourceOrigin?.rawLineNumbers || []).join(', ') || 'n/a');
+    if (editReadModel.execution) {
+      appendInspectorRow(meta, 'execution from', formatNcPoint(editReadModel.execution.start));
+      appendInspectorRow(meta, 'execution to', formatNcPoint(editReadModel.execution.end));
+      appendInspectorRow(meta, 'segments', editReadModel.execution.segmentIds.join(', ') || 'none');
+    }
+    if (lastEditUpdate) {
+      appendInspectorRow(meta, 'last edit range', `${lastEditUpdate.firstRecalculatedIndex + 1}..${lastEditUpdate.lastRecalculatedIndex + 1}, convergence ${lastEditUpdate.convergedAtIndex == null ? 'none' : lastEditUpdate.convergedAtIndex + 1}`);
+    }
+    ncEditInspectorEl.append(meta);
+
+    if (!editReadModel.editability.editable) {
+      const readonly = document.createElement('p');
+      readonly.className = 'section-hint';
+      readonly.textContent = `Read-only: ${editReadModel.editability.reason}. ${editReadModel.editability.message}`;
+      ncEditInspectorEl.append(readonly);
+      return;
+    }
+
+    const form = document.createElement('div');
+    form.className = 'nc-edit-field-grid';
+    editReadModel.fields.forEach(({ field, value }) => {
+      const label = document.createElement('label');
+      label.className = 'field';
+      const span = document.createElement('span');
+      span.textContent = field;
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.step = 'any';
+      input.value = Number.isFinite(value) ? String(value) : '';
+      input.dataset.field = field;
+      input.dataset.committedValue = input.value;
+      input.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') { input.value = input.dataset.committedValue || ''; lastEditError = null; renderEditInspector(); }
+        if (event.key === 'Enter') { event.preventDefault(); commitInput(input); }
+      });
+      input.addEventListener('change', () => commitInput(input));
+      label.append(span, input);
+      form.append(label);
+    });
+    ncEditInspectorEl.append(form);
+    if (lastEditError) {
+      const err = document.createElement('p');
+      err.className = 'status status-error';
+      err.textContent = `${lastEditError.code}: ${lastEditError.message}`;
+      ncEditInspectorEl.append(err);
+    }
+  }
+
+  function commitInput(input) {
+    const text = input.value.trim();
+    if (text === '') { lastEditError = { code: 'invalid-number', message: 'Empty input is not a numeric value.' }; renderEditInspector(); return; }
+    const value = Number(text);
+    if (!Number.isFinite(value)) { lastEditError = { code: 'non-finite-number', message: 'Value must be finite.' }; renderEditInspector(); return; }
+    onCanonicalFieldCommit?.({ lineId: editReadModel.lineId, field: input.dataset.field, value, expectedRevision: editReadModel.revision });
+  }
+
   function dispose() {
     if (ncSourceListEl && sourceScrollHandler) {
       ncSourceListEl.removeEventListener('scroll', sourceScrollHandler);
@@ -175,7 +292,9 @@ export function createNcUi(ctx) {
     }
     sourceScrollHandler = null;
     ncSourceFocusButton?.removeEventListener('click', handleFocusClick);
+    ncDownloadNormalizedButton?.removeEventListener('click', handleDownloadClick);
     clearSourceSelection();
+    clearEditInspector();
     showHoverInspector(null);
   }
 
@@ -201,6 +320,10 @@ export function createNcUi(ctx) {
 
   function handleFocusClick() {
     onFocusSelectedSegment?.();
+  }
+
+  function handleDownloadClick() {
+    onDownloadNormalized?.();
   }
 
   function updateFocusButton(enabled) {
@@ -271,6 +394,7 @@ export function createNcUi(ctx) {
       row.setAttribute('role', 'option');
       row.setAttribute('aria-selected', String(index === selectedLineIndex));
       row.classList.toggle('is-selected', index === selectedLineIndex);
+      row.classList.toggle('is-active-edit', line.lineId === activeLineId);
       const segmentIds = Array.isArray(line.segmentIds) ? line.segmentIds : [];
       row.classList.toggle('has-segment', segmentIds.length > 0);
       row.classList.toggle('no-segment', segmentIds.length === 0);
@@ -278,6 +402,7 @@ export function createNcUi(ctx) {
       row.dataset.lineIndex = String(line.index);
       row.dataset.lineNumber = String(line.number);
       row.dataset.segmentIds = segmentIds.join(',');
+      row.dataset.lineId = line.lineId || '';
 
       const number = document.createElement('span');
       number.className = 'nc-source-row-number';
@@ -304,6 +429,9 @@ export function createNcUi(ctx) {
     showSourceSelection,
     showSourceLineSelection,
     clearSourceSelection,
+    setActiveEditLine,
+    setDirtyState,
+    clearEditInspector,
     dispose
   };
 }
