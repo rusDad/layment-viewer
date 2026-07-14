@@ -1,19 +1,23 @@
 export function createRawNcDocument(text, options = {}) {
   const originalText = typeof text === 'string' ? text : '';
   const lineEnding = detectLineEnding(originalText);
+  const rawTextLines = splitRawLines(originalText);
+  const hasTrailingLineEnding = originalText.endsWith('\n') || originalText.endsWith('\r');
+  const originalHash = stableContentHash(originalText);
   const document = {
     kind: 'RawNcDocument',
-    documentId: options.documentId || `raw-${stableContentHash(originalText).slice(0, 16)}`,
+    documentId: options.documentId || `raw-${originalHash.slice(0, 16)}`,
     filename: options.filename || null,
     originalText,
-    originalHash: stableContentHash(originalText),
+    originalHash,
     originalLineEnding: lineEnding,
-    rawLines: splitRawLines(originalText).map((line, index) => Object.freeze({
+    rawLines: rawTextLines.map((line, index) => Object.freeze({
       index,
       number: index + 1,
       text: line,
-      lineEnding: index < splitRawLines(originalText).length - 1 || originalText.endsWith('\n') || originalText.endsWith('\r') ? lineEnding : 'none'
-    }))
+      lineEnding: index < rawTextLines.length - 1 || hasTrailingLineEnding ? lineEnding : 'none'
+      })
+    )
   };
   document.rawLineToCanonicalLineIds = new Map();
   return deepFreezeRawDocument(document);
