@@ -424,3 +424,25 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.35);
   border-radius: 50%;
 }
+
+.nc-source-row.is-active-edit {
+  outline: 1px solid #ffb74d;
+  background: rgba(255, 183, 77, 0.14);
+}
+
+.nc-source-row.is-selected.is-active-edit {
+  background: rgba(255, 183, 77, 0.24);
+}
+
+.nc-edit-inspector {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(255,255,255,0.12);
+}
+
+.nc-edit-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
