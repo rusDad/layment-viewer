@@ -116,7 +116,7 @@ export function createNcUi(ctx) {
   }
 
   function showSourceSelection(segment) {
-    selectedSegmentId = Number.isInteger(segment?.id) ? segment.id : null;
+    selectedSegmentId = getSegmentId(segment);
     selectedLineIndex = Number.isInteger(segment?.sourceLineIndex) ? segment.sourceLineIndex : null;
 
     if (!segment || selectedLineIndex === null) {
@@ -134,7 +134,7 @@ export function createNcUi(ctx) {
   }
 
   function showSourceLineSelection(line, segment) {
-    selectedSegmentId = Number.isInteger(segment?.id) ? segment.id : null;
+    selectedSegmentId = getSegmentId(segment);
     selectedLineIndex = Number.isInteger(line?.index) ? line.index : null;
 
     if (!line || selectedLineIndex === null) {
@@ -399,3 +399,5 @@ function appendDepthTransition(meta, segment) {
   if (!segment?.start || !segment?.end || segment.start.z === segment.end.z) return;
   appendInspectorRow(meta, 'Z start → end', `${formatNumber(segment.start.z)} → ${formatNumber(segment.end.z)}`);
 }
+
+function getSegmentId(segment) { return segment ? (segment.segmentId ?? segment.id ?? null) : null; }

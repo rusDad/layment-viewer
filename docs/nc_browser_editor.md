@@ -1590,3 +1590,35 @@ NC-E1 preserves comments and safe opaque non-motion service lines such as suppor
 NC-E1 rejects unsupported or ambiguous constructs with structured diagnostics rather than silently dropping them, including unsupported planes, unsupported unit/positioning semantics, unsupported motion-affecting commands, invalid arcs, non-finite numeric words and canonical invariant violations.
 
 Future editing work must operate on `CanonicalNcDocument`, not on the immutable original source and not on rendered Three.js geometry.
+
+## 22. Current NC-E2 implementation map
+
+NC-E2 is implemented in the viewer with this dependency direction:
+
+```text
+CanonicalNcDocument
+  -> public/nc/execution/NcCanonicalExecution.mjs
+  -> NcExecutionCache
+  -> public/nc/execution/NcProgramAnalysis.mjs
+  -> cache-derived indexes / diagnostics
+  -> Three.js renderer
+```
+
+The canonical line executor is DOM- and Three.js-independent. Its execution state is intentionally minimal:
+
+```text
+position: { x, y, z }
+feed: number | null
+```
+
+Each canonical line receives an `NcExecutedLineCacheEntry` with `lineId`, `canonicalIndex`, semantic `inputState`/`outputState`, command summary, produced semantic segments, diagnostics, and a deterministic execution hash. Motion segment provenance is stable: segment IDs are built as `<lineId>:<localSegmentIndex>`, and cache indexes provide `lineId -> entry`, `lineId -> segmentIds`, `segmentId -> lineId`, `segmentId -> segment`, and `canonical index -> lineId`.
+
+Incremental recalculation starts at an arbitrary canonical index, reuses the unchanged prefix, executes with the same line executor as full execution, and stops only after semantic convergence: same line ID, same canonical line signature, equal input/output state, equal semantic segments, and equal diagnostics. Numeric geometry comparisons use the centralized execution epsilon; exact fields such as motion code, line ID, segment count, and arc direction must match exactly.
+
+`NcProgramAnalysis` is now built from the execution cache and exposes segments, diagnostics, bounding box, motion counts, feed range, rendered point count, and final state for the existing viewer flow. The renderer consumes semantic `NcToolpathSegment[]` and samples arcs only for Three.js `BufferGeometry` and highlight geometry. Picking metadata stores stable segment IDs; source focus and hover resolve through cache-derived indexes instead of renderer-owned source identity.
+
+Roadmap status:
+
+- NC-E1 raw-to-canonical import remains the foundation.
+- NC-E2 canonical execution cache is complete for the viewer/editor foundation.
+- NC-E3 should add single-line token editing on top of `CanonicalNcDocument` and the incremental cache API, without adding UI deletion, multi-selection, undo/redo, query selection, or batch transforms in NC-E2.

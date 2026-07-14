@@ -157,7 +157,7 @@ export class NcPickingController {
     }
 
     const hit = this.pickFromPointerEvent(event);
-    this.onSelectSegmentChange?.(Number.isInteger(hit?.logicalSegmentId) ? hit.logicalSegmentId : null);
+    this.onSelectSegmentChange?.(isValidSegmentId(hit?.logicalSegmentId) ? hit.logicalSegmentId : null);
     this.pointerState.clear();
   }
 
@@ -174,9 +174,11 @@ export class NcPickingController {
 
 
   setHoveredSegmentId(segmentId) {
-    const normalized = Number.isInteger(segmentId) ? segmentId : null;
+    const normalized = isValidSegmentId(segmentId) ? segmentId : null;
     if (this.hoveredSegmentId === normalized) return;
     this.hoveredSegmentId = normalized;
     this.onHoverSegmentChange?.(normalized);
   }
 }
+
+function isValidSegmentId(segmentId) { return Number.isInteger(segmentId) || (typeof segmentId === 'string' && segmentId.length > 0); }

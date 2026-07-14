@@ -1,3 +1,5 @@
+import { sampleSegmentPoints } from './execution/NcProgramAnalysis.mjs';
+
 export const NC_MOTIONS = ['G0', 'G1', 'G2', 'G3'];
 
 export function createEmptyNcMotionBatches() {
@@ -30,17 +32,18 @@ export function buildNcColoredRenderBatch(toolpath, dimensions, mapPointToThree,
 }
 
 function appendSegmentToBatch(batch, segment, dimensions, mapPointToThree, color = null) {
-  for (let i = 1; i < segment.points.length; i += 1) {
-    const from = mapPointToThree(segment.points[i - 1], dimensions);
-    const to = mapPointToThree(segment.points[i], dimensions);
+  const points = Array.isArray(segment.points) ? segment.points : sampleSegmentPoints(segment);
+  for (let i = 1; i < points.length; i += 1) {
+    const from = mapPointToThree(points[i - 1], dimensions);
+    const to = mapPointToThree(points[i], dimensions);
     batch.positions.push(from.x, from.y, from.z, to.x, to.y, to.z);
     if (color) {
       const rgb = hexToRgb(color);
       batch.colors.push(rgb.r, rgb.g, rgb.b, rgb.r, rgb.g, rgb.b);
     }
     batch.renderSegmentRefs.push({
-      logicalSegmentId: segment.id,
-      segmentId: segment.id,
+      logicalSegmentId: segment.segmentId ?? segment.id,
+      segmentId: segment.segmentId ?? segment.id,
       sourceLineNumber: segment.sourceLineNumber,
       polylinePartIndex: i - 1,
       partIndex: i - 1

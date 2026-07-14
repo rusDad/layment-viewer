@@ -147,10 +147,10 @@ export function createNcPreview(ctx) {
   }
 
   function getActiveSegment(segmentId) {
-    if (!Number.isInteger(segmentId) || !activeToolpath) {
+    if (!isValidSegmentId(segmentId) || !activeToolpath) {
       return null;
     }
-    return activeToolpath.segments.find((segment) => segment.id === segmentId) ?? null;
+    return activeToolpath.segments.find((segment) => (segment.segmentId ?? segment.id) === segmentId) ?? null;
   }
 
   function getSourceLineByNumber(lineNumber) {
@@ -195,3 +195,5 @@ export function createNcPreview(ctx) {
     }
   };
 }
+
+function isValidSegmentId(segmentId) { return Number.isInteger(segmentId) || (typeof segmentId === 'string' && segmentId.length > 0); }

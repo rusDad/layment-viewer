@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { buildNcColoredRenderBatch } from './NcRenderIndex.js';
+import { sampleSegmentPoints } from './execution/NcProgramAnalysis.mjs';
 import { buildNcColorContext, getNcColorLegend, getSegmentColor } from './NcColorStrategies.js';
 
 export const NC_DEFAULT_COLORS = { G0: '#7fb7ff', G1: '#42d36b', G2: '#ffad33', G3: '#d45cff' };
@@ -133,19 +134,20 @@ export function createNcScene(ctx) {
 
   function replaceSegmentHighlight(current, segmentId, color, name, renderOrder) {
     disposeHighlight(current);
-    if (!Number.isInteger(segmentId) || !activeToolpath || !activeDimensions || !ncPreviewGroup) {
+    if (!isValidSegmentId(segmentId) || !activeToolpath || !activeDimensions || !ncPreviewGroup) {
       return null;
     }
 
-    const segment = activeToolpath.segments.find((candidate) => candidate.id === segmentId);
-    if (!segment || segment.points.length < 2) {
+    const segment = activeToolpath.segments.find((candidate) => (candidate.segmentId ?? candidate.id) === segmentId);
+    const points = segment ? (Array.isArray(segment.points) ? segment.points : sampleSegmentPoints(segment)) : [];
+    if (!segment || points.length < 2) {
       return null;
     }
 
     const positions = [];
-    for (let i = 1; i < segment.points.length; i += 1) {
-      const from = mapNcPointToThree(segment.points[i - 1], activeDimensions);
-      const to = mapNcPointToThree(segment.points[i], activeDimensions);
+    for (let i = 1; i < points.length; i += 1) {
+      const from = mapNcPointToThree(points[i - 1], activeDimensions);
+      const to = mapNcPointToThree(points[i], activeDimensions);
       positions.push(from.x, from.y, from.z, to.x, to.y, to.z);
     }
 
@@ -222,3 +224,5 @@ export function mapNcPointToThree(point, dimensions) {
   // semantics, Y-depth placement, or the box geometry.
   return new THREE.Vector3(dimensions.width - point.x, point.z, point.y);
 }
+
+function isValidSegmentId(segmentId) { return typeof segmentId === 'string' || Number.isInteger(segmentId); }

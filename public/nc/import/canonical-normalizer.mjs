@@ -6,13 +6,14 @@ import {
   mapLastWordsByLetter,
   normalizeGCode,
   parseNcProgram,
-  parseNcToToolpath,
   stripGcodeComments,
   resolveRadiusArcCenter,
   resolveTargetPosition
 } from '../nc-parser.mjs';
 import { createRawNcDocument } from '../document/RawNcDocument.mjs';
 import { createCanonicalLineId, createCanonicalNcDocument, serializeCanonicalNcDocument } from '../document/CanonicalNcDocument.mjs';
+import { executeCanonicalDocument } from '../execution/NcCanonicalExecution.mjs';
+import { analyzeNcExecutionCache } from '../execution/NcProgramAnalysis.mjs';
 
 const MOTIONS = new Set(['G0', 'G1', 'G2', 'G3']);
 const LINEAR = new Set(['G0', 'G1']);
@@ -131,26 +132,13 @@ export function normalizeRawNcDocument(rawDocument, options = {}) {
   }
   const canonicalDocument = createCanonicalNcDocument({ rawDocument, lines: canonicalLines, diagnostics });
   const canonicalText = serializeCanonicalNcDocument(canonicalDocument);
-  const canonicalToolpath = parseNcToToolpath(canonicalText, options);
+  const executionCache = executeCanonicalDocument(canonicalDocument);
+  const canonicalToolpath = analyzeNcExecutionCache(executionCache, canonicalDocument, options);
   canonicalToolpath.canonicalDocument = canonicalDocument;
   canonicalToolpath.rawDocument = rawDocument;
   canonicalToolpath.canonicalText = canonicalText;
-  canonicalToolpath.lines.forEach((line, index) => {
-    const canonicalLine = canonicalDocument.lines[index];
-    if (canonicalLine) {
-      line.lineId = canonicalLine.lineId;
-      line.sourceOrigin = canonicalLine.sourceOrigin;
-      line.kind = canonicalLine.kind;
-    }
-  });
-  canonicalToolpath.segments.forEach((segment) => {
-    const canonicalLine = canonicalDocument.lines[segment.sourceLineIndex];
-    if (canonicalLine) {
-      segment.sourceLineId = canonicalLine.lineId;
-      segment.rawSourceOrigin = canonicalLine.sourceOrigin;
-    }
-  });
-  return { ok: true, rawDocument, canonicalDocument, canonicalText, toolpath: canonicalToolpath, diagnostics };
+  canonicalToolpath.executionCache = executionCache;
+  return { ok: true, rawDocument, canonicalDocument, canonicalText, executionCache, toolpath: canonicalToolpath, diagnostics };
 }
 
 function resolveCanonicalArc(start, end, wordsByLetter, motion, modalState, lineNumber) {
