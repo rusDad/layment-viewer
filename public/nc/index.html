@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NC Tools — Layment Viewer</title>
+    <link rel="stylesheet" href="../style.css" />
+    <link rel="icon" href="../favicon.ico" sizes="any" />
+    <script type="importmap">
+     {
+       "imports": {
+         "three": "https://cdn.jsdelivr.net/npm/three@0.185.0/build/three.module.js",
+         "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.0/examples/jsm/"
+       }
+     }
+     </script>
+  </head>
+  <body class="viewer-mode-debug">
+    <div class="layout nc-tools-layout">
+      <aside class="panel debug-only">
+        <nav class="page-nav" aria-label="Viewer navigation">
+          <a href="../">← SVG viewer</a>
+        </nav>
+
+        <section class="upload-section nc-section">
+          <h3>NC toolpath preview</h3>
+          <p class="section-hint">Debug-визуализация G0/G1/G2/G3 поверх габаритного box.</p>
+
+          <label class="field field-full"><span>.nc file</span><input id="nc-file" type="file" accept=".nc,.gcode,.tap,text/plain" /></label>
+          <div class="field-grid">
+            <label class="field"><span>width mm</span><input id="nc-width" type="number" min="0.1" step="0.1" value="375" /></label>
+            <label class="field"><span>height mm</span><input id="nc-height" type="number" min="0.1" step="0.1" value="565" /></label>
+            <label class="field"><span>thickness mm</span><input id="nc-thickness" type="number" min="0.1" step="0.1" value="35" /></label>
+          </div>
+          <label class="field field-full"><span>color strategy</span><select id="nc-color-strategy"><option value="motion">Motion</option><option value="tool">Tool</option><option value="depth">Depth</option><option value="feed">Feed</option></select></label>
+          <div id="nc-color-legend" class="nc-color-legend" aria-live="polite"></div>
+          <div class="color-grid" aria-label="NC motion colors">
+            <label class="field"><span>G0</span><input id="nc-color-g0" type="color" value="#7fb7ff" /></label>
+            <label class="field"><span>G1</span><input id="nc-color-g1" type="color" value="#42d36b" /></label>
+            <label class="field"><span>G2</span><input id="nc-color-g2" type="color" value="#ffad33" /></label>
+            <label class="field"><span>G3</span><input id="nc-color-g3" type="color" value="#d45cff" /></label>
+          </div>
+          <label class="field field-full range-field"><span>box opacity <output id="nc-opacity-value">0.30</output></span><input id="nc-opacity" type="range" min="0" max="1" step="0.01" value="0.30" /></label>
+          <button id="nc-preview" type="button">Build NC preview</button>
+          <button id="nc-download-normalized" type="button" disabled>Download normalized NC</button>
+          <div id="nc-status" class="status" role="status" aria-live="polite"></div>
+          <section id="nc-source-panel" class="nc-source-panel" aria-label="NC source" hidden>
+            <div class="nc-source-panel-header"><div class="nc-source-title-row"><h4>NC source</h4><button id="nc-source-focus" type="button" class="nc-source-focus" disabled>Focus</button></div><div id="nc-source-detail" class="nc-source-detail" aria-live="polite"></div><div id="nc-edit-inspector" class="nc-edit-inspector" aria-live="polite"></div></div>
+            <div id="nc-source-list" class="nc-source-list" role="listbox" aria-label="NC source lines" tabindex="0"></div>
+          </section>
+        </section>
+      </aside>
+      <main class="viewport"><div id="canvas-root"></div><aside id="nc-hover-inspector" class="nc-hover-inspector debug-only" aria-live="polite" hidden></aside></main>
+    </div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
