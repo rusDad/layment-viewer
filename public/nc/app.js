@@ -27,6 +27,7 @@ const ncPreviewController = new NcPreview({
   ncSourceDetailEl: document.getElementById('nc-source-detail'),
   ncSourceFocusButton: document.getElementById('nc-source-focus'),
   ncEditInspectorEl: document.getElementById('nc-edit-inspector'),
+  ncQueryPanelEl: document.getElementById('nc-query-panel'),
   ncDownloadNormalizedButton: document.getElementById('nc-download-normalized'),
   ncDeleteSelectedButton: document.getElementById('nc-delete-selected'),
   ncUndoButton: document.getElementById('nc-undo'),

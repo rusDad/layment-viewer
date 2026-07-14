@@ -1,0 +1,41 @@
+import assert from 'node:assert/strict';
+import { createRawNcDocument } from '../public/nc/document/RawNcDocument.mjs';
+import { createCanonicalNcDocument } from '../public/nc/document/CanonicalNcDocument.mjs';
+import { executeCanonicalDocument } from '../public/nc/execution/NcCanonicalExecution.mjs';
+import { evaluateNcSelectionQuery } from '../public/nc/NcSelectionQuery.mjs';
+
+const raw = createRawNcDocument('G0\nG1\nG2\nG3\n;comment\nM3\n', { filename: 'q.nc' });
+const motion = (lineId, motion, i, z, feed) => Object.freeze({ lineId, kind: 'motion', motion, start: { x: i-1, y: 0, z: 0 }, end: { x: i, y: 0, z }, feed, arc: motion === 'G2' || motion === 'G3' ? { center: { x: i - 0.5, y: 0.5 } } : null, text: null, sourceOrigin: { rawLineNumbers: [i], normalizationKind: 'test' }, parseStatus: 'ok' });
+const comment = Object.freeze({ lineId: 'L5', kind: 'comment', text: ';comment', sourceOrigin: { rawLineNumbers: [5], normalizationKind: 'test' }, parseStatus: 'ok' });
+const opaque = Object.freeze({ lineId: 'L6', kind: 'opaque', text: 'M3', sourceOrigin: { rawLineNumbers: [6], normalizationKind: 'test' }, parseStatus: 'ok' });
+const document = createCanonicalNcDocument({ rawDocument: raw, lines: [motion('L1','G0',1,5,0), motion('L2','G1',2,-1,100), motion('L3','G2',3,-1.0000005,250), motion('L4','G3',4,-3,500), comment, opaque] });
+const baseCache = executeCanonicalDocument(document);
+const cache = Object.freeze({ ...baseCache, diagnostics: Object.freeze([...baseCache.diagnostics, { severity: 'warning', code: 'test-warning', lineId: 'L5', canonicalIndex: 4, message: 'warn' }]) });
+const q = (predicates, rest = {}) => evaluateNcSelectionQuery({ document, cache, currentSelection: rest.currentSelection, query: { scope: rest.scope ?? 'document', combination: rest.combination ?? 'all', predicates } });
+
+assert.deepEqual(q([{ kind: 'motion', values: ['G0','G2'] }]).lineIds, ['L1','L3']);
+assert.deepEqual(q([{ kind: 'z', operator: '<', value: 0 }]).lineIds, ['L2','L3','L4']);
+assert.deepEqual(q([{ kind: 'z', operator: '=', value: -1 }]).lineIds, ['L2','L3']);
+assert.deepEqual(q([{ kind: 'feed', operator: '>', value: 200 }]).lineIds, ['L3','L4']);
+assert.deepEqual(q([{ kind: 'diagnostic', severity: 'warning', code: 'test-warning' }]).lineIds, ['L5']);
+assert.deepEqual(q([{ kind: 'line-kind', values: ['comment', 'machine'] }]).lineIds, ['L5','L6']);
+assert.deepEqual(q([{ kind: 'canonical-range', from: 2, to: 4 }]).lineIds, ['L2','L3','L4']);
+assert.deepEqual(q([{ kind: 'source-range', from: 5, to: 6 }]).lineIds, ['L5','L6']);
+assert.deepEqual(q([{ kind: 'line-kind', values: ['comment'] }, { kind: 'feed', operator: '>', value: 1 }], { combination: 'any' }).lineIds, ['L2','L3','L4','L5']);
+assert.deepEqual(q([{ kind: 'motion', values: ['G1','G2','G3'] }, { kind: 'z', operator: '<', value: -2 }], { combination: 'all' }).lineIds, ['L4']);
+assert.deepEqual(q([{ kind: 'motion', values: ['G1','G2','G3'] }], { scope: 'current-selection', currentSelection: { orderedLineIds: ['L4','L2'] } }).lineIds, ['L2','L4']);
+assert.deepEqual(q([{ kind: 'motion', values: ['G1'] }], { scope: 'current-selection', currentSelection: { orderedLineIds: [] } }).lineIds, []);
+assert.equal(q([]).ok, false);
+assert.equal(q([{ kind: 'feed', operator: '>', value: Infinity }]).diagnostics[0].code, 'non-finite-number');
+assert.equal(q([{ kind: 'canonical-range', from: 5, to: 2 }]).diagnostics[0].code, 'range-from-greater-than-to');
+
+let executed = 0;
+const perfLines = Array.from({ length: 12000 }, (_, i) => motion(`P${i}`, i % 2 ? 'G1' : 'G0', i + 1, i % 3 ? -1 : 1, i));
+const perfDoc = createCanonicalNcDocument({ rawDocument: raw, lines: perfLines });
+const perfCache = executeCanonicalDocument(perfDoc, undefined, { onExecuteLine: () => { executed += 1; } });
+executed = 0;
+const perf = evaluateNcSelectionQuery({ document: perfDoc, cache: perfCache, query: { scope: 'document', combination: 'all', predicates: [{ kind: 'motion', values: ['G1'] }, { kind: 'z', operator: '<', value: 0 }] } });
+assert.equal(perf.scannedCount, 12000);
+assert.equal(executed, 0, 'query does not execute lines');
+assert.ok(perf.matchedCount > 0);
+console.log('OK: NC selection query tests passed.');

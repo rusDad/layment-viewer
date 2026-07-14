@@ -12,6 +12,7 @@ export function createNcUi(ctx) {
     ncSourceDetailEl,
     ncSourceFocusButton,
     ncEditInspectorEl,
+    ncQueryPanelEl,
     ncDownloadNormalizedButton,
     ncDeleteSelectedButton,
     ncUndoButton,
@@ -36,7 +37,9 @@ export function createNcUi(ctx) {
     onResetToInitial,
     onClearSelection,
     onSelectAll,
-    onTogglePreviousOverlay
+    onTogglePreviousOverlay,
+    onApplySelectionQuery,
+    getActiveDocumentRevision
   } = ctx;
 
   let sourceLines = [];
@@ -51,6 +54,9 @@ export function createNcUi(ctx) {
   let lastEditError = null;
   let lastEditUpdate = null;
   let actionHandlersBound = false;
+  let queryDraft = defaultQueryDraft();
+  let lastQueryResult = null;
+  let lastQueryRevision = null;
 
   function setNcStatus(message, isError = false) {
     if (!ncStatusEl) {
@@ -149,6 +155,7 @@ export function createNcUi(ctx) {
       ncSourcePanelEl.hidden = sourceLines.length === 0;
     }
     renderSourceWindow();
+    renderSelectionQueryPanel();
   }
 
   function showSourceSelection(segment) {
@@ -353,6 +360,7 @@ export function createNcUi(ctx) {
     clearSourceSelection();
     clearEditInspector();
     showHoverInspector(null);
+    if (ncQueryPanelEl) ncQueryPanelEl.innerHTML = '';
   }
 
   function handleSourceListClick(event) {
@@ -527,7 +535,73 @@ export function createNcUi(ctx) {
     ncEditInspectorEl.append(title, meta);
   }
 
+  
+  function resetSelectionQuery(revision = null) {
+    queryDraft = defaultQueryDraft();
+    lastQueryResult = null;
+    lastQueryRevision = revision;
+    renderSelectionQueryPanel();
+  }
+
+  function markSelectionQueryStale(revision = null) {
+    if (lastQueryResult?.ok && lastQueryRevision !== null && revision !== lastQueryRevision) lastQueryResult = { ...lastQueryResult, stale: true };
+    renderSelectionQueryPanel();
+  }
+
+  function showSelectionQueryResult(result) {
+    lastQueryResult = result;
+    if (result?.ok) lastQueryRevision = result.documentRevision ?? getActiveDocumentRevision?.() ?? null;
+    renderSelectionQueryPanel();
+  }
+
+  function renderSelectionQueryPanel() {
+    if (!ncQueryPanelEl) return;
+    ncQueryPanelEl.innerHTML = '';
+    if (sourceLines.length === 0) return;
+    const wrap = document.createElement('section'); wrap.className = 'nc-query-card';
+    const title = document.createElement('div'); title.className = 'nc-source-detail-title'; title.textContent = 'Query selection'; wrap.append(title);
+    const controls = document.createElement('div'); controls.className = 'nc-query-controls';
+    controls.append(selectField('Scope', queryDraft.scope, [['document','Whole document'], ['current-selection','Current selection']], (v)=>{ queryDraft.scope=v; }), selectField('Match', queryDraft.combination, [['all','All predicates'], ['any','Any predicate']], (v)=>{ queryDraft.combination=v; }), selectField('Apply', queryDraft.applyMode, [['replace','Replace selection'], ['add','Add to selection']], (v)=>{ queryDraft.applyMode=v; }));
+    wrap.append(controls);
+    const rows = document.createElement('div'); rows.className = 'nc-query-rows';
+    queryDraft.predicates.forEach((predicate, index) => rows.append(renderPredicateRow(predicate, index)));
+    wrap.append(rows);
+    const actions = document.createElement('div'); actions.className = 'nc-edit-actions';
+    const add = button('Add predicate', () => { queryDraft.predicates.push({ kind: 'motion', values: ['G0'] }); renderSelectionQueryPanel(); });
+    const apply = button('Apply query', () => onApplySelectionQuery?.(materializeQueryDraft(), queryDraft.applyMode));
+    const clear = button('Clear query', () => resetSelectionQuery(getActiveDocumentRevision?.() ?? null));
+    actions.append(add, apply, clear); wrap.append(actions);
+    if (lastQueryResult) {
+      const status = document.createElement('p'); status.className = `status ${lastQueryResult.ok ? 'status-meta' : 'status-error'}`;
+      status.textContent = lastQueryResult.ok ? `${lastQueryResult.matchedCount} matched, ${lastQueryResult.scannedCount} scanned · ${lastQueryResult.summary.scope} · ${lastQueryResult.summary.combination} · ${lastQueryResult.summary.predicateCount} predicates${lastQueryResult.stale ? ' · stale: apply again after document edit' : ''}` : lastQueryResult.diagnostics.map((d)=>`${d.code}: ${d.message}`).join(' ');
+      wrap.append(status);
+    }
+    ncQueryPanelEl.append(wrap);
+  }
+
+  function renderPredicateRow(predicate, index) {
+    const row = document.createElement('div'); row.className = 'nc-query-row';
+    row.append(selectField('', predicate.kind, [['motion','Motion'],['line-kind','Line kind'],['z','Z'],['feed','Feed'],['diagnostic','Diagnostic'],['canonical-range','Canonical range'],['source-range','Source range']], (v)=>{ queryDraft.predicates[index] = defaultPredicate(v); renderSelectionQueryPanel(); }));
+    if (predicate.kind === 'motion') row.append(checkboxes(['G0','G1','G2','G3'], predicate.values, (values)=>{ predicate.values = values; }));
+    else if (predicate.kind === 'line-kind') row.append(checkboxes(['motion','comment','machine','opaque','empty'], predicate.values, (values)=>{ predicate.values = values; }));
+    else if (predicate.kind === 'z' || predicate.kind === 'feed') row.append(selectField('', predicate.operator, [['<','<'],['<=','<='],['=','='],['>=','>='],['>','>']], (v)=>{ predicate.operator=v; }), inputField('value', predicate.valueText ?? String(predicate.value ?? ''), (v)=>{ predicate.valueText=v; }));
+    else if (predicate.kind === 'diagnostic') row.append(selectField('severity', predicate.severity ?? '', [['','any'],['error','error'],['blocking-warning','blocking-warning'],['warning','warning'],['info','info']], (v)=>{ predicate.severity=v||undefined; }), inputField('code', predicate.code ?? '', (v)=>{ predicate.code=v||undefined; }));
+    else row.append(inputField('from', predicate.fromText ?? String(predicate.from ?? ''), (v)=>{ predicate.fromText=v; }), inputField('to', predicate.toText ?? String(predicate.to ?? ''), (v)=>{ predicate.toText=v; }));
+    row.append(button('Remove', () => { queryDraft.predicates.splice(index, 1); renderSelectionQueryPanel(); }));
+    return row;
+  }
+
+  function materializeQueryDraft() { return { scope: queryDraft.scope, combination: queryDraft.combination, predicates: queryDraft.predicates.map((p) => { const q = { kind: p.kind }; if (p.values) q.values = [...p.values]; if (p.operator) q.operator = p.operator; if (p.kind === 'z' || p.kind === 'feed') q.value = Number(p.valueText ?? p.value); if (p.kind === 'diagnostic') { if (p.severity) q.severity = p.severity; if (p.code) q.code = p.code; } if (p.kind === 'canonical-range' || p.kind === 'source-range') { q.from = Number(p.fromText ?? p.from); q.to = Number(p.toText ?? p.to); } return q; }) }; }
+  function defaultQueryDraft() { return { scope: 'document', combination: 'all', applyMode: 'replace', predicates: [{ kind: 'motion', values: ['G0'] }] }; }
+  function defaultPredicate(kind) { if (kind === 'motion') return { kind, values: ['G0'] }; if (kind === 'line-kind') return { kind, values: ['motion'] }; if (kind === 'z' || kind === 'feed') return { kind, operator: '<', valueText: '0' }; if (kind === 'diagnostic') return { kind }; return { kind, fromText: '1', toText: '1' }; }
+  function selectField(labelText, value, options, onChange) { const label = document.createElement('label'); label.className = 'field'; if (labelText) { const span = document.createElement('span'); span.textContent = labelText; label.append(span); } const select = document.createElement('select'); options.forEach(([v,t])=>{ const o=document.createElement('option'); o.value=v; o.textContent=t; o.selected=v===value; select.append(o); }); select.addEventListener('change',()=>onChange(select.value)); label.append(select); return label; }
+  function inputField(placeholder, value, onInput) { const input = document.createElement('input'); input.type = 'text'; input.placeholder = placeholder; input.value = value ?? ''; input.addEventListener('input',()=>onInput(input.value)); input.addEventListener('keydown',(e)=>{ if(e.key==='Enter'){ e.preventDefault(); onApplySelectionQuery?.(materializeQueryDraft(), queryDraft.applyMode); }}); return input; }
+  function checkboxes(values, selected, onChange) { const box = document.createElement('div'); box.className='nc-query-checks'; values.forEach((v)=>{ const label=document.createElement('label'); const input=document.createElement('input'); input.type='checkbox'; input.checked=(selected??[]).includes(v); input.addEventListener('change',()=>{ const set=new Set(predicateSafeValues(selected)); input.checked?set.add(v):set.delete(v); selected.splice?.(0, selected.length, ...set); onChange([...set]); }); label.append(input, document.createTextNode(v)); box.append(label); }); return box; }
+  function predicateSafeValues(values) { return Array.isArray(values) ? values : []; }
+  function button(text, onClick) { const b=document.createElement('button'); b.type='button'; b.textContent=text; b.addEventListener('click', onClick); return b; }
+
   function handleWorkspaceKeyDown(event) {
+
     if (isEditableTarget(event.target)) return;
     const mod = event.ctrlKey || event.metaKey;
     if (event.key === 'Delete') { event.preventDefault(); onDeleteSelected?.(); }
@@ -556,6 +630,9 @@ export function createNcUi(ctx) {
     setSelectionEditState,
     setHistoryState,
     showImpactSummary,
+    resetSelectionQuery,
+    markSelectionQueryStale,
+    showSelectionQueryResult,
     dispose
   };
 }
