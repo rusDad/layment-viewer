@@ -1,4 +1,5 @@
-import { NC_MAX_FILE_BYTES, parseNcToToolpath } from './nc-parser.mjs';
+import { NC_MAX_FILE_BYTES } from './nc-parser.mjs';
+import { importNcToCanonicalDocument } from './import/canonical-normalizer.mjs';
 import { createNcScene } from './NcScene.js';
 import { NcPickingController } from './NcPickingController.js';
 import { NcSelectionController } from './NcSelectionController.js';
@@ -102,7 +103,13 @@ export function createNcPreview(ctx) {
 
     let toolpath;
     try {
-      toolpath = parseNcToToolpath(text);
+      const imported = importNcToCanonicalDocument(text, { filename: file.name });
+      if (!imported.ok) {
+        const details = imported.diagnostics.map((diagnostic) => `line ${diagnostic.source?.lineNumber ?? 'n/a'}: ${diagnostic.message}`).join('\n');
+        ncUi.setNcStatus(`NC normalization failed:\n${details}`, true);
+        return;
+      }
+      toolpath = imported.toolpath;
     } catch (err) {
       ncUi.setNcStatus(`Не удалось распарсить NC: ${err instanceof Error ? err.message : String(err)}`, true);
       return;
@@ -120,7 +127,7 @@ export function createNcPreview(ctx) {
     const previewResult = ncScene.buildNcPreview(toolpath, dimensions, ncUi.getNcVisualSettings());
     ncPicking.setPickableLineBatches(previewResult.motionLineBatches);
     ncUi.renderColorLegend(previewResult.colorLegend);
-    ncUi.setNcStatus(formatNcStatus(toolpath));
+    ncUi.setNcStatus(formatNcStatus(toolpath, 'Normalized canonical NC document opened.'));
   }
 
   function selectSegment(segmentId) {

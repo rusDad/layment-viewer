@@ -1542,3 +1542,51 @@ After an edit, execution begins at the earliest affected line and stops only whe
 Every semantic batch operation must verify that the resulting executed geometry matches its intended transformation within tolerance or refuse the operation.
 
 The tool remains lightweight because its machine profile and canonical dialect are constrained, not because NC semantics are treated as plain text.
+
+---
+
+## Repository implementation note — NC-E1 raw import and canonical normalization
+
+Status: **NC-E1 implemented in Layment Viewer**. The next planned NC editor step is **NC-E2 Canonical execution cache**; editing commands, undo/redo, batch operations and incremental cache invalidation remain out of scope for NC-E1.
+
+The viewer import boundary now materializes two distinct artifacts:
+
+```text
+RawNcDocument
+  immutable original source text, filename, content hash, line-ending policy and raw lines
+
+CanonicalNcDocument
+  deterministic read-only working document with stable lineId values, raw provenance and canonical serialization
+```
+
+The active NC preview is built from the canonical serialized document after import. The original raw source remains attached to the workspace for provenance, reset/compare flows and future source-mode switching.
+
+### Canonical NC profile used by NC-E1
+
+The implemented profile is intentionally narrow and project-specific:
+
+- units are normalized to millimetres;
+- active plane is XY / `G17`;
+- motion coordinates are normalized to absolute coordinates;
+- each canonical motion line serializes an explicit `G0`, `G1`, `G2` or `G3`;
+- each canonical motion line serializes explicit `X`, `Y`, `Z` and effective `F`;
+- arcs are represented internally as motion direction plus explicit start point, end point and absolute XY center;
+- serialized canonical arcs emit deterministic relative `I`/`J` offsets computed from the absolute center and start point;
+- numeric output uses `.` as decimal separator, fixed maximum precision, trimmed trailing zeros, `-0` normalized to `0`, and a terminal LF newline.
+
+### Normalized, preserved and rejected constructs
+
+NC-E1 normalizes the subset already executed deterministically by the viewer parser:
+
+- `G0`/`G1` linear moves;
+- `G2`/`G3` XY arcs using supported `I`/`J` center offsets, absolute centers (`G90.1`) or supported `R` radius arcs;
+- modal motion commands omitted on following coordinate lines;
+- omitted `X`, `Y` and `Z` values, using the effective executed position;
+- modal feed values;
+- explicit `G20` inch units and `G91` incremental coordinates when the existing parser can deterministically convert them to absolute millimetres at import time.
+
+NC-E1 preserves comments and safe opaque non-motion service lines such as supported `M` commands, tool/spindle/feed-only service state, without giving them editable semantic behavior.
+
+NC-E1 rejects unsupported or ambiguous constructs with structured diagnostics rather than silently dropping them, including unsupported planes, unsupported unit/positioning semantics, unsupported motion-affecting commands, invalid arcs, non-finite numeric words and canonical invariant violations.
+
+Future editing work must operate on `CanonicalNcDocument`, not on the immutable original source and not on rendered Three.js geometry.
