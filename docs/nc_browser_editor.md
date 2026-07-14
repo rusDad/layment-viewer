@@ -1678,3 +1678,29 @@ The previous-geometry overlay contains only removed segments plus previous versi
 The NC source workspace now exposes Delete selected, Undo, Redo, Reset to initial, candidate download and previous-overlay toggle controls. Single-line selection keeps the structured NC-E3 numeric inspector; multi-selection shows a compact selection summary and delete/focus affordances.
 
 NC-E4 intentionally does not add query-based selection, Z/feed/motion predicate filters, batch numeric operations, line insertion, duplication, raw text editing, reordering, server-side revisions, persistent history or a generic editor framework. Those remain future NC-E5+ work.
+
+---
+
+## Current roadmap status — NC-E5 query-based selection
+
+NC-E5 is implemented in Layment Viewer as a typed `NcSelectionQuery` model evaluated by a pure query service over the current canonical document and canonical execution cache. Query evaluation returns ordered stable canonical `lineId` values and applies them through the existing `NcSelection` owner, so source rows, render highlights and the multi-selection inspector continue to use the NC-E4 lineId-based selection/navigation path.
+
+Supported predicates are:
+
+- canonical line kind: `motion`, `comment`, `machine`, `opaque`, `empty`;
+- motion command: `G0`, `G1`, `G2`, `G3`;
+- semantic executed endpoint Z comparison;
+- semantic effective feed comparison;
+- structured diagnostic presence, severity and code;
+- inclusive displayed canonical line range, starting at 1;
+- inclusive original source-line provenance range.
+
+Queries support `document` scope and `current-selection` scope. Current-selection queries scan only currently selected IDs in canonical document order; an empty selection produces an empty successful result. Predicate composition is explicit `all` or `any`; an empty predicate list is invalid and is not treated as select-all.
+
+Applying a query supports `replace` and `add`. It mutates only selection state: it does not modify `CanonicalNcDocument`, execution cache, edit history, dirty state, serialized candidate or raw source. Z/feed predicates read canonical command/execution-entry semantics rather than raw text. Diagnostic predicates read structured cache/analysis diagnostics rather than source substrings.
+
+The query panel keeps the draft after edits, delete, undo and redo, but previous query results are marked stale when the document revision changes. Results are not recalculated automatically; users must press Apply again. Loading a new file resets the query form/status to defaults.
+
+Known non-goals for NC-E5 remain: no free-text query language, regex/source substring search, spatial rectangle/polygon selection, live query while typing, saved presets, batch edit operations, query history, Web Worker, virtualized source list or parser dialect expansion.
+
+NC-E5 acceptance is complete. The next planned stage is NC-E6: batch numeric operations over the existing query-created selection.

@@ -8,8 +8,9 @@ import { NcEditHistory } from './document/NcEditHistory.mjs';
 import { buildNcEditImpact } from './document/NcEditImpact.mjs';
 import { createNcScene } from './NcScene.js';
 import { NcPickingController } from './NcPickingController.js';
-import { NcSelectionController } from './NcSelectionController.js';
+import { NcSelectionController, orderedSelection } from './NcSelectionController.js';
 import { createNcUi, formatNcStatus } from './NcUi.js';
+import { evaluateNcSelectionQuery } from './NcSelectionQuery.mjs';
 
 
 export class NcPreview {
@@ -76,7 +77,9 @@ export function createNcPreview(ctx) {
     onSelectAll: () => selection.selectAll('command'),
     onTogglePreviousOverlay: (visible) => { previousOverlayVisible = visible; ncScene.setPreviousGeometryOverlayVisible(visible, lastImpact?.previousOverlaySegments); },
     onCanonicalFieldCommit: (command) => commitCanonicalField(command),
-    onDownloadNormalized: () => downloadNormalizedCandidate()
+    onDownloadNormalized: () => downloadNormalizedCandidate(),
+    onApplySelectionQuery: (query, mode) => applySelectionQuery(query, mode),
+    getActiveDocumentRevision: () => activeDocument?.revision ?? null
   });
   const ncPicking = new NcPickingController({
     ...ctx,
@@ -148,6 +151,7 @@ export function createNcPreview(ctx) {
       activeDimensions = null;
       activeFilename = null;
       ncUi.clearEditInspector();
+      ncUi.resetSelectionQuery(activeDocument?.revision ?? null);
       ncUi.setNcStatus(formatNcStatus(toolpath, 'Движения G0/G1/G2/G3 не найдены.'), true);
       return;
     }
@@ -161,6 +165,7 @@ export function createNcPreview(ctx) {
     activeDimensions = dimensions;
     activeLineId = null;
     ncUi.clearEditInspector();
+    ncUi.resetSelectionQuery(activeDocument?.revision ?? null);
     ncUi.setSourceDocument(toolpath.lines);
     ncUi.setDirtyState(false);
     ncUi.setHistoryState(history.getState(), false);
@@ -212,6 +217,15 @@ export function createNcPreview(ctx) {
     });
   }
 
+  function applySelectionQuery(query, mode = 'replace') {
+    const result = evaluateNcSelectionQuery({ document: activeDocument, cache: activeCache, analysis: activeToolpath, currentSelection: selection.getSelection(), query });
+    if (!result.ok) { ncUi.showSelectionQueryResult(result, activeToolpath, activeCache, activeDocument); return; }
+    const order = activeDocument?.lines?.map((line) => line.lineId) ?? [];
+    const ids = mode === 'add' ? [...selection.getSelection().orderedLineIds, ...result.lineIds] : result.lineIds;
+    selection.setSelection(orderedSelection(ids, order, result.lineIds[0] ?? ids[0] ?? null, result.lineIds.at(-1) ?? ids.at(-1) ?? null, 'query'));
+    ncUi.showSelectionQueryResult(result, activeToolpath, activeCache, activeDocument);
+  }
+
   function deleteSelectedLines() {
     const beforeSelection = selection.getSelection();
     const lineIds = beforeSelection.orderedLineIds;
@@ -249,6 +263,7 @@ export function createNcPreview(ctx) {
     if (pushHistory) history.push({ kind, label, beforeDocument, afterDocument: candidateDocument, firstAffectedIndex, selectionBefore, selectionAfter, changedLineIds });
     lastImpact = buildNcEditImpact({ beforeDocument, afterDocument: candidateDocument, beforeCache, afterCache: activeCache, executionUpdate, operation: { kind, label, selectedLineCount: selectionBefore?.orderedLineIds?.length ?? 0, deletedLineCount, firstAffectedIndex }, dirty: candidateDocument.dirty, historyState: history.getState() });
     ncUi.setSourceDocument(activeToolpath.lines);
+    ncUi.markSelectionQueryStale(activeDocument?.revision ?? null);
     selection.setSelection(selectionAfter);
     ncUi.setDirtyState(Boolean(activeDocument.dirty));
     ncUi.setHistoryState(history.getState(), Boolean(activeDocument.dirty));
@@ -372,6 +387,7 @@ export function createNcPreview(ctx) {
       ncUi.showImpactSummary(null);
       ncUi.setHistoryState(history.getState(), false);
       ncUi.clearEditInspector();
+      ncUi.resetSelectionQuery(null);
       ncScene.clearNcPreview();
     },
     dispose: () => {
@@ -391,6 +407,7 @@ export function createNcPreview(ctx) {
       ncUi.showImpactSummary(null);
       ncUi.setHistoryState(history.getState(), false);
       ncUi.clearEditInspector();
+      ncUi.resetSelectionQuery(null);
       ncScene.clearNcPreview();
     }
   };

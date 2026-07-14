@@ -496,3 +496,9 @@ body {
 .stl-upload-page button {
   margin-top: 8px;
 }
+.nc-query-panel { margin: 0.75rem 0; }
+.nc-query-card { border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 0.75rem; background: rgba(255,255,255,0.03); }
+.nc-query-controls, .nc-query-row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: end; margin: 0.4rem 0; }
+.nc-query-row { border-top: 1px solid rgba(255,255,255,0.08); padding-top: 0.45rem; }
+.nc-query-checks { display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center; }
+.nc-query-checks label { display: inline-flex; gap: 0.2rem; align-items: center; font-size: 0.85rem; }
