@@ -298,14 +298,14 @@ export function parseNcToToolpath(text, options = {}) {
   };
 }
 
-function normalizeGCode(value) {
+export function normalizeGCode(value) {
   if (Math.abs(value - 90.1) < 1e-6) return 'G90.1';
   if (Math.abs(value - 91.1) < 1e-6) return 'G91.1';
   if (Number.isInteger(value)) return `G${value}`;
   return `G${value}`;
 }
 
-function mapLastWordsByLetter(words) {
+export function mapLastWordsByLetter(words) {
   const map = new Map();
   words.forEach((word) => {
     if (word.letter !== 'G' && Number.isFinite(word.value)) {
@@ -315,7 +315,7 @@ function mapLastWordsByLetter(words) {
   return map;
 }
 
-function resolveTargetPosition(current, wordsByLetter, modalState) {
+export function resolveTargetPosition(current, wordsByLetter, modalState) {
   const unitScale = getUnitScale(modalState.units);
   const next = { ...current };
 
@@ -332,7 +332,7 @@ function resolveTargetPosition(current, wordsByLetter, modalState) {
   return next;
 }
 
-function resolveRadiusArcCenter(start, end, radius, motion) {
+export function resolveRadiusArcCenter(start, end, radius, motion) {
   if (!Number.isFinite(radius) || Math.abs(radius) <= 1e-9 || samePoint2(start, end)) {
     return null;
   }
@@ -381,7 +381,7 @@ function resolveRadiusArcCenter(start, end, radius, motion) {
   }, null)?.center ?? null;
 }
 
-function getArcSweep(startAngle, endAngle, motion, isFullCircle) {
+export function getArcSweep(startAngle, endAngle, motion, isFullCircle) {
   if (isFullCircle) {
     return motion === 'G2' ? -Math.PI * 2 : Math.PI * 2;
   }
@@ -395,7 +395,7 @@ function getArcSweep(startAngle, endAngle, motion, isFullCircle) {
   return sweep;
 }
 
-function getUnitScale(units) {
+export function getUnitScale(units) {
   return units === 'inch' ? 25.4 : 1;
 }
 
