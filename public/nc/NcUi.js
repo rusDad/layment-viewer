@@ -30,6 +30,8 @@ export function createNcUi(ctx) {
     onSourceLineSelect,
     onFocusSelectedSegment,
     onCanonicalFieldCommit,
+    onBatchNumericPreview,
+    onBatchNumericApply,
     onDownloadNormalized,
     onDeleteSelected,
     onUndo,
@@ -57,6 +59,9 @@ export function createNcUi(ctx) {
   let queryDraft = defaultQueryDraft();
   let lastQueryResult = null;
   let lastQueryRevision = null;
+  let batchDraft = { targetField: 'feed', type: 'set', valueText: '800', minText: '', maxText: '' };
+  let lastBatchPlan = null;
+  let lastSelectionEditArgs = null;
 
   function setNcStatus(message, isError = false) {
     if (!ncStatusEl) {
@@ -222,6 +227,7 @@ export function createNcUi(ctx) {
      editReadModel = null;
      activeLineId = null;
     
+     lastSelectionEditArgs = { selectionState, canonicalDocument, cache, toolpath };
      renderMultiSelectionInspector(
        selectionState,
        canonicalDocument,
@@ -337,6 +343,7 @@ export function createNcUi(ctx) {
       form.append(label);
     });
     ncEditInspectorEl.append(form);
+    renderBatchNumericControls([editReadModel.lineId]);
     if (lastEditError) {
       const err = document.createElement('p');
       err.className = 'status status-error';
@@ -586,9 +593,50 @@ export function createNcUi(ctx) {
     appendInspectorRow(meta, 'segments', segments.length);
 
     ncEditInspectorEl.append(title, meta);
+    renderBatchNumericControls(ids);
   }
 
   
+
+  function renderBatchNumericControls(lineIds) {
+    if (!ncEditInspectorEl) return;
+    const ids = Array.isArray(lineIds) ? lineIds : [];
+    const section = document.createElement('section'); section.className = 'nc-query-card';
+    const title = document.createElement('div'); title.className = 'nc-source-detail-title'; title.textContent = 'Batch numeric edit'; section.append(title);
+    const controls = document.createElement('div'); controls.className = 'nc-query-controls';
+    controls.append(
+      selectField('Field', batchDraft.targetField, [['feed','Feed (F)'], ['z','Z target']], (v)=>{ batchDraft.targetField = v; renderSelectionQueryPanel(); rerenderCurrentInspector(); }),
+      selectField('Operation', batchDraft.type, [['set','Set'], ['add','Add'], ['multiply','Multiply'], ['clamp','Clamp']], (v)=>{ batchDraft.type = v; renderSelectionQueryPanel(); rerenderCurrentInspector(); })
+    );
+    if (batchDraft.type === 'clamp') controls.append(inputField('min', batchDraft.minText, (v)=>{ batchDraft.minText = v; }), inputField('max', batchDraft.maxText, (v)=>{ batchDraft.maxText = v; }));
+    else controls.append(inputField(batchDraft.type === 'multiply' ? 'factor' : 'value', batchDraft.valueText, (v)=>{ batchDraft.valueText = v; }));
+    section.append(controls);
+    const actions = document.createElement('div'); actions.className = 'nc-edit-actions';
+    actions.append(button('Preview batch', () => { lastBatchPlan = onBatchNumericPreview?.(materializeBatchDraft()); renderBatchPlan(section); }), button('Apply batch', () => { onBatchNumericApply?.(materializeBatchDraft()); }));
+    section.append(actions);
+    const hint = document.createElement('p'); hint.className = 'section-hint'; hint.textContent = `Applies to ${ids.length} selected canonical line${ids.length === 1 ? '' : 's'} only; comments and opaque lines are skipped.`; section.append(hint);
+    ncEditInspectorEl.append(section);
+    renderBatchPlan(section);
+  }
+
+  function materializeBatchDraft() { return { targetField: batchDraft.targetField, type: batchDraft.type, value: Number(batchDraft.valueText), min: batchDraft.minText === '' ? null : Number(batchDraft.minText), max: batchDraft.maxText === '' ? null : Number(batchDraft.maxText) }; }
+  function showBatchNumericPlan(plan) { lastBatchPlan = plan; rerenderCurrentInspector(); }
+  function rerenderCurrentInspector() { if (editReadModel?.line) renderEditInspector(); else if (lastSelectionEditArgs) renderMultiSelectionInspector(lastSelectionEditArgs.selectionState, lastSelectionEditArgs.canonicalDocument, lastSelectionEditArgs.cache, lastSelectionEditArgs.toolpath); }
+  function renderBatchPlan(section) {
+    if (!lastBatchPlan) return;
+    const p = document.createElement('p'); p.className = `status ${lastBatchPlan.ok ? 'status-meta' : 'status-error'}`;
+    p.textContent = lastBatchPlan.ok ? `${lastBatchPlan.summary}; earliest=${lastBatchPlan.earliestAffectedLineIndex == null ? 'n/a' : lastBatchPlan.earliestAffectedLineIndex + 1}` : `${lastBatchPlan.error?.code}: ${lastBatchPlan.error?.message}`;
+    section.append(p);
+    if (lastBatchPlan.ok && lastBatchPlan.changes?.length) {
+      const pre = document.createElement('pre'); pre.className = 'nc-inspector-source';
+      pre.textContent = lastBatchPlan.changes.slice(0, 5).map((c)=>`${c.canonicalIndex + 1}: ${c.oldValue} → ${c.newValue}`).join('\n'); section.append(pre);
+    }
+    if (lastBatchPlan.ok && lastBatchPlan.skipped?.length) {
+      const pre = document.createElement('pre'); pre.className = 'nc-inspector-source';
+      pre.textContent = `Skipped:\n${lastBatchPlan.skipped.slice(0, 5).map((x)=>`${x.canonicalIndex + 1}: ${x.reason}`).join('\n')}`; section.append(pre);
+    }
+  }
+
   function resetSelectionQuery(revision = null) {
     queryDraft = defaultQueryDraft();
     lastQueryResult = null;
@@ -686,6 +734,7 @@ export function createNcUi(ctx) {
     resetSelectionQuery,
     markSelectionQueryStale,
     showSelectionQueryResult,
+    showBatchNumericPlan,
     dispose
   };
 }

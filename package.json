@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node server.js",
     "start": "node server.js",
-    "test": "node test/overlap-union.test.js && node test/top-regions.test.js && node test/nc-parser.test.mjs && node test/nc-canonical-normalizer.test.mjs && node test/nc-execution-cache.test.mjs && node test/nc-interaction.test.mjs && node test/nc-canonical-editor.test.mjs && node test/nc-e4-editor-session.test.mjs && node test/nc-selection-query.test.mjs && node test/routing.test.mjs"
+    "test": "node test/overlap-union.test.js && node test/top-regions.test.js && node test/nc-parser.test.mjs && node test/nc-canonical-normalizer.test.mjs && node test/nc-execution-cache.test.mjs && node test/nc-interaction.test.mjs && node test/nc-canonical-editor.test.mjs && node test/nc-e4-editor-session.test.mjs && node test/nc-selection-query.test.mjs && node test/nc-batch-numeric.test.mjs && node test/routing.test.mjs"
   },
   "dependencies": {
     "express": "^4.21.2",
