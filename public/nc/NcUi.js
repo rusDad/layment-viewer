@@ -32,6 +32,9 @@ export function createNcUi(ctx) {
     onCanonicalFieldCommit,
     onBatchNumericPreview,
     onBatchNumericApply,
+    onTranslationPreview,
+    onTranslationApply,
+    onTranslationClear,
     onDownloadNormalized,
     onDeleteSelected,
     onUndo,
@@ -61,6 +64,8 @@ export function createNcUi(ctx) {
   let lastQueryRevision = null;
   let batchDraft = { targetField: 'feed', type: 'set', valueText: '800', minText: '', maxText: '' };
   let lastBatchPlan = null;
+  let translationDraft = { dxText: '0', dyText: '0' };
+  let lastTranslationPlan = null;
   let lastSelectionEditArgs = null;
 
   function setNcStatus(message, isError = false) {
@@ -343,6 +348,7 @@ export function createNcUi(ctx) {
       form.append(label);
     });
     ncEditInspectorEl.append(form);
+    renderTranslationControls([editReadModel.lineId]);
     renderBatchNumericControls([editReadModel.lineId]);
     if (lastEditError) {
       const err = document.createElement('p');
@@ -594,6 +600,48 @@ export function createNcUi(ctx) {
 
     ncEditInspectorEl.append(title, meta);
     renderBatchNumericControls(ids);
+    renderTranslationControls(ids);
+  }
+
+  function renderTranslationControls(lineIds) {
+    if (!ncEditInspectorEl) return;
+    const ids = Array.isArray(lineIds) ? lineIds : [];
+    const section = document.createElement('section'); section.className = 'nc-query-card';
+    const title = document.createElement('div'); title.className = 'nc-source-detail-title'; title.textContent = 'Semantic XY translation'; section.append(title);
+    const controls = document.createElement('div'); controls.className = 'nc-query-controls';
+    controls.append(inputField('ΔX mm', translationDraft.dxText, (v)=>{ translationDraft.dxText = v; }), inputField('ΔY mm', translationDraft.dyText, (v)=>{ translationDraft.dyText = v; }));
+    section.append(controls);
+    const actions = document.createElement('div'); actions.className = 'nc-edit-actions';
+    const previewButton = button('Preview translation', () => { lastTranslationPlan = onTranslationPreview?.(materializeTranslationDraft()); renderTranslationPlan(section); });
+    const applyButton = button('Apply translation', () => onTranslationApply?.(materializeTranslationDraft()));
+    applyButton.disabled = !(lastTranslationPlan?.applicable && lastTranslationPlan?.verification?.ok);
+    actions.append(previewButton, applyButton, button('Clear preview', () => { lastTranslationPlan = null; onTranslationClear?.(); rerenderCurrentInspector(); }));
+    section.append(actions);
+    const hint = document.createElement('p'); hint.className = 'section-hint'; hint.textContent = `Plans an absolute canonical X/Y translation for ${ids.length} selected G0/G1 line${ids.length === 1 ? '' : 's'} and previews changed boundary connectors.`;
+    section.append(hint);
+    ncEditInspectorEl.append(section);
+    renderTranslationPlan(section);
+  }
+
+  function materializeTranslationDraft() { return { dxMm: Number(translationDraft.dxText), dyMm: Number(translationDraft.dyText) }; }
+  function showTranslationPlan(plan) { lastTranslationPlan = plan; rerenderCurrentInspector(); }
+  function renderTranslationPlan(section) {
+    if (!lastTranslationPlan) return;
+    const p = document.createElement('p'); p.className = `status ${lastTranslationPlan.ok ? (lastTranslationPlan.applicable ? 'status-meta' : 'status-error') : 'status-error'}`;
+    p.textContent = lastTranslationPlan.ok
+      ? `selected=${lastTranslationPlan.targetLineIds?.length ?? 0}, G0/G1=${lastTranslationPlan.translatedLineCount ?? 0}, ignored=${lastTranslationPlan.ignoredLineCount ?? 0}, blockers=${lastTranslationPlan.blockerCount ?? 0}, ranges=${lastTranslationPlan.rangeCount ?? 0}, ΔX=${lastTranslationPlan.dxMm}, ΔY=${lastTranslationPlan.dyMm}, earliest=${lastTranslationPlan.earliestAffectedLineIndex == null ? 'n/a' : lastTranslationPlan.earliestAffectedLineIndex + 1}, boundary connectors=${lastTranslationPlan.connectorChangeCount ?? 0}, verification=${lastTranslationPlan.verification?.ok ? 'ok' : 'failed'}, applicable=${lastTranslationPlan.applicable ? 'yes' : 'no'}`
+      : `${lastTranslationPlan.error?.code}: ${lastTranslationPlan.error?.message}`;
+    section.append(p);
+    if (lastTranslationPlan.ok && lastTranslationPlan.translated?.length) {
+      const pre = document.createElement('pre'); pre.className = 'nc-inspector-source';
+      pre.textContent = lastTranslationPlan.translated.slice(0, 5).map((c)=>`${c.canonicalIndex + 1} ${c.motion}: X${c.before.x},Y${c.before.y} → X${c.after.x},Y${c.after.y}`).join('\n');
+      section.append(pre);
+    }
+    if (lastTranslationPlan.ok && lastTranslationPlan.blockers?.length) {
+      const pre = document.createElement('pre'); pre.className = 'nc-inspector-source';
+      pre.textContent = `Blockers:\n${lastTranslationPlan.blockers.slice(0, 5).map((b)=>`${(b.canonicalIndex ?? -1) + 1}: ${b.reason}`).join('\n')}`;
+      section.append(pre);
+    }
   }
 
   
@@ -735,6 +783,7 @@ export function createNcUi(ctx) {
     markSelectionQueryStale,
     showSelectionQueryResult,
     showBatchNumericPlan,
+    showTranslationPlan,
     dispose
   };
 }

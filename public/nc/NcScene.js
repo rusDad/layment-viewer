@@ -14,6 +14,7 @@ export function createNcScene(ctx) {
   let hoverHighlight = null;
   let selectionHighlight = null;
   let previousGeometryOverlay = null;
+  let candidateGeometryOverlay = null;
   let previousGeometryOverlayVisible = true;
   const ncLineMaterials = [];
   let activeLineBatches = [];
@@ -138,6 +139,15 @@ export function createNcScene(ctx) {
     previousGeometryOverlay = null;
   }
 
+  function setCandidateGeometryOverlay(segments) {
+    candidateGeometryOverlay = replaceExplicitSegmentsHighlight(candidateGeometryOverlay, segments || [], 0x00e5ff, 'NC candidate affected geometry', 6, 0.8);
+  }
+
+  function clearCandidateGeometryOverlay() {
+    disposeHighlight(candidateGeometryOverlay);
+    candidateGeometryOverlay = null;
+  }
+
   function setPreviousGeometryOverlayVisible(visible, segments = null) {
     previousGeometryOverlayVisible = Boolean(visible);
     if (segments) setPreviousGeometryOverlay(segments, { visible: previousGeometryOverlayVisible });
@@ -205,9 +215,11 @@ export function createNcScene(ctx) {
     disposeHighlight(hoverHighlight);
     disposeHighlight(selectionHighlight);
     disposeHighlight(previousGeometryOverlay);
+    disposeHighlight(candidateGeometryOverlay);
     hoverHighlight = null;
     selectionHighlight = null;
     previousGeometryOverlay = null;
+    candidateGeometryOverlay = null;
     scene.remove(ncPreviewGroup);
     ncPreviewGroup.traverse((obj) => {
       if (obj.isMesh || obj.isLine || obj.isLineSegments) {
@@ -230,7 +242,7 @@ export function createNcScene(ctx) {
     activeLineBatches = [];
   }
 
-  return { buildNcPreview, updateVisualSettings, setHoverHighlight, setSelectionHighlight, setPreviousGeometryOverlay, clearPreviousGeometryOverlay, setPreviousGeometryOverlayVisible, focusSelectedSegment, clearNcPreview };
+  return { buildNcPreview, updateVisualSettings, setHoverHighlight, setSelectionHighlight, setPreviousGeometryOverlay, clearPreviousGeometryOverlay, setPreviousGeometryOverlayVisible, setCandidateGeometryOverlay, clearCandidateGeometryOverlay, focusSelectedSegment, clearNcPreview };
 }
 
 export function mapNcPointToThree(point, dimensions) {
