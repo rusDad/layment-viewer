@@ -9,7 +9,6 @@ export function createNcUi(ctx) {
     ncHoverInspectorEl,
     ncSourcePanelEl,
     ncSourceListEl,
-    ncSourceDetailEl,
     ncSourceFocusButton,
     ncEditInspectorEl,
     ncQueryPanelEl,
@@ -60,6 +59,7 @@ export function createNcUi(ctx) {
   let lastEditUpdate = null;
   let actionHandlersBound = false;
   let queryDraft = defaultQueryDraft();
+  let isSelectionQueryOpen = true;
   let lastQueryResult = null;
   let lastQueryRevision = null;
   let batchDraft = { targetField: 'feed', type: 'set', valueText: '800', minText: '', maxText: '' };
@@ -180,7 +180,6 @@ export function createNcUi(ctx) {
     if (ncSourcePanelEl) {
       ncSourcePanelEl.hidden = false;
     }
-    renderSourceDetail(segment);
     updateFocusButton(Boolean(segment));
     scrollSourceLineIntoView(selectedLineIndex);
     renderSourceWindow();
@@ -198,7 +197,6 @@ export function createNcUi(ctx) {
     if (ncSourcePanelEl) {
       ncSourcePanelEl.hidden = false;
     }
-    renderSourceDetail(segment, line);
     updateFocusButton(Boolean(segment));
     scrollSourceLineIntoView(selectedLineIndex);
     renderSourceWindow();
@@ -215,7 +213,6 @@ export function createNcUi(ctx) {
     selectedSegmentId = segmentId ?? null;
     if (toolpath?.lines?.length) ncSourcePanelEl.hidden = false;
     if (selectedLineIndex !== null) scrollSourceLineIntoView(selectedLineIndex);
-    renderSelectionDetail(selectionState, toolpath, cache);
     if (ncDeleteSelectedButton) ncDeleteSelectedButton.disabled = (selectionState?.orderedLineIds?.length ?? 0) === 0;
     updateFocusButton((selectionState?.orderedLineIds ?? []).some((id) => (cache?.lineIdToSegmentIds?.get(id) ?? []).length > 0));
     renderSourceWindow();
@@ -248,9 +245,6 @@ export function createNcUi(ctx) {
     if (ncDeleteSelectedButton) ncDeleteSelectedButton.disabled = true;
     if (ncSourcePanelEl) {
       ncSourcePanelEl.hidden = true;
-    }
-    if (ncSourceDetailEl) {
-      ncSourceDetailEl.textContent = '';
     }
     if (ncSourceListEl) {
       ncSourceListEl.innerHTML = '';
@@ -440,33 +434,6 @@ export function createNcUi(ctx) {
     }
   }
 
-  function renderSourceDetail(segment, sourceLine = null) {
-    if (!ncSourceDetailEl) return;
-    ncSourceDetailEl.innerHTML = '';
-    const title = document.createElement('div');
-    title.className = 'nc-source-detail-title';
-    const lineNumber = segment?.sourceLineNumber ?? sourceLine?.number ?? 'n/a';
-    title.textContent = segment
-      ? `Line ${lineNumber} · ${segment.motion ?? 'n/a'}`
-      : `Line ${lineNumber} · No rendered motion`;
-    if (!segment) {
-      const source = document.createElement('pre');
-      source.className = 'nc-inspector-source';
-      source.textContent = sourceLine?.text || '';
-      ncSourceDetailEl.append(title, source);
-      return;
-    }
-    const meta = document.createElement('dl');
-    meta.className = 'nc-inspector-meta';
-    appendInspectorRow(meta, 'From', formatNcPoint(segment.start));
-    appendInspectorRow(meta, 'To', formatNcPoint(segment.end));
-    appendInspectorRow(meta, 'Feed', formatNullable(segment.feed, ' mm/min'));
-    appendInspectorRow(meta, 'Tool', segment.tool == null ? 'n/a' : `T${formatNumber(segment.tool)}`);
-    appendInspectorRow(meta, 'Spindle', formatNullable(segment.spindle));
-    appendDepthTransition(meta, segment);
-    ncSourceDetailEl.append(title, meta);
-  }
-
   function scrollSourceLineIntoView(lineIndex) {
     if (!ncSourceListEl) return;
     const viewportRows = Math.max(1, Math.floor(ncSourceListEl.clientHeight / NC_SOURCE_ROW_HEIGHT_PX));
@@ -536,25 +503,9 @@ export function createNcUi(ctx) {
 
   function showImpactSummary(impact) {
     lastEditUpdate = impact ? { firstRecalculatedIndex: impact.firstAffectedIndex, lastRecalculatedIndex: impact.lastRecalculatedIndex, convergedAtIndex: impact.convergenceIndex } : null;
-    if (!ncSourceDetailEl) return;
     if (!impact) return;
     const msg = `${impact.label}: lines changed ${impact.changedLineIdsCount}, segments +${impact.addedSegmentCount}/-${impact.removedSegmentCount}/~${impact.changedSegmentCount}, dirty=${impact.dirty}`;
     setNcStatus(msg, false);
-  }
-
-  function renderSelectionDetail(selectionState, toolpath, cache) {
-    if (!ncSourceDetailEl) return;
-    const ids = selectionState?.orderedLineIds ?? [];
-    if (ids.length === 0) { ncSourceDetailEl.textContent = ''; return; }
-    if (ids.length === 1) {
-      const line = toolpath?.lines?.find((candidate) => candidate.lineId === ids[0]);
-      const seg = line?.segmentIds?.[0] ? toolpath?.segments?.find((segment) => segment.segmentId === line.segmentIds[0]) : null;
-      renderSourceDetail(seg, line);
-      return;
-    }
-    const lines = ids.map((id) => toolpath?.lines?.find((line) => line.lineId === id)).filter(Boolean);
-    const segs = ids.flatMap((id) => (cache?.lineIdToSegmentIds?.get(id) ?? []).map((sid) => cache.segmentById.get(sid)).filter(Boolean));
-    ncSourceDetailEl.textContent = `${ids.length} canonical lines selected · ${segs.length} rendered segments · range ${Math.min(...lines.map(l=>l.number))}..${Math.max(...lines.map(l=>l.number))}`;
   }
 
  function renderMultiSelectionInspector(
@@ -580,7 +531,6 @@ export function createNcUi(ctx) {
         .filter(Boolean)
     );
     ncEditInspectorEl.innerHTML = '';
-    // Теперь это глобальный DOM document.
     const title = document.createElement('div');
     title.className = 'nc-source-detail-title';
     title.textContent = `${ids.length} selected canonical lines`;
@@ -705,29 +655,39 @@ export function createNcUi(ctx) {
 
   function renderSelectionQueryPanel() {
     if (!ncQueryPanelEl) return;
+    const previousDetails = ncQueryPanelEl.querySelector('details.nc-query-card');
+    if (previousDetails) isSelectionQueryOpen = previousDetails.open;
     ncQueryPanelEl.innerHTML = '';
     if (sourceLines.length === 0) return;
-    const wrap = document.createElement('section'); wrap.className = 'nc-query-card';
-    const title = document.createElement('div'); title.className = 'nc-source-detail-title'; title.textContent = 'Query selection'; wrap.append(title);
+    const wrap = document.createElement('details');
+    wrap.className = 'nc-query-card';
+    wrap.open = isSelectionQueryOpen;
+    wrap.addEventListener('toggle', () => { isSelectionQueryOpen = wrap.open; });
+    const summary = document.createElement('summary');
+    summary.className = 'nc-query-summary';
+    summary.textContent = 'Query selection';
+    wrap.append(summary);
+    const body = document.createElement('div');
+    body.className = 'nc-query-body';
     const controls = document.createElement('div'); controls.className = 'nc-query-controls';
     controls.append(selectField('Scope', queryDraft.scope, [['document','Whole document'], ['current-selection','Current selection']], (v)=>{ queryDraft.scope=v; }), selectField('Match', queryDraft.combination, [['all','All predicates'], ['any','Any predicate']], (v)=>{ queryDraft.combination=v; }), selectField('Apply', queryDraft.applyMode, [['replace','Replace selection'], ['add','Add to selection']], (v)=>{ queryDraft.applyMode=v; }));
-    wrap.append(controls);
+    body.append(controls);
     const rows = document.createElement('div'); rows.className = 'nc-query-rows';
     queryDraft.predicates.forEach((predicate, index) => rows.append(renderPredicateRow(predicate, index)));
-    wrap.append(rows);
+    body.append(rows);
     const actions = document.createElement('div'); actions.className = 'nc-edit-actions';
     const add = button('Add predicate', () => { queryDraft.predicates.push({ kind: 'motion', values: ['G0'] }); renderSelectionQueryPanel(); });
     const apply = button('Apply query', () => onApplySelectionQuery?.(materializeQueryDraft(), queryDraft.applyMode));
     const clear = button('Clear query', () => resetSelectionQuery(getActiveDocumentRevision?.() ?? null));
-    actions.append(add, apply, clear); wrap.append(actions);
+    actions.append(add, apply, clear); body.append(actions);
     if (lastQueryResult) {
       const status = document.createElement('p'); status.className = `status ${lastQueryResult.ok ? 'status-meta' : 'status-error'}`;
       status.textContent = lastQueryResult.ok ? `${lastQueryResult.matchedCount} matched, ${lastQueryResult.scannedCount} scanned · ${lastQueryResult.summary.scope} · ${lastQueryResult.summary.combination} · ${lastQueryResult.summary.predicateCount} predicates${lastQueryResult.stale ? ' · stale: apply again after document edit' : ''}` : lastQueryResult.diagnostics.map((d)=>`${d.code}: ${d.message}`).join(' ');
-      wrap.append(status);
+      body.append(status);
     }
+    wrap.append(body);
     ncQueryPanelEl.append(wrap);
   }
-
   function renderPredicateRow(predicate, index) {
     const row = document.createElement('div'); row.className = 'nc-query-row';
     row.append(selectField('', predicate.kind, [['motion','Motion'],['line-kind','Line kind'],['z','Z'],['feed','Feed'],['diagnostic','Diagnostic'],['canonical-range','Canonical range'],['source-range','Source range']], (v)=>{ queryDraft.predicates[index] = defaultPredicate(v); renderSelectionQueryPanel(); }));

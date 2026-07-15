@@ -24,7 +24,6 @@ const ncPreviewController = new NcPreview({
   ncHoverInspectorEl: document.getElementById('nc-hover-inspector'),
   ncSourcePanelEl: document.getElementById('nc-source-panel'),
   ncSourceListEl: document.getElementById('nc-source-list'),
-  ncSourceDetailEl: document.getElementById('nc-source-detail'),
   ncSourceFocusButton: document.getElementById('nc-source-focus'),
   ncEditInspectorEl: document.getElementById('nc-edit-inspector'),
   ncQueryPanelEl: document.getElementById('nc-query-panel'),
