@@ -284,11 +284,11 @@ body {
 }
 
 .nc-source-panel-header {
-  flex: 0 1 auto;
-  min-height: 0;
+  flex: 0 0 auto;
+  min-height: auto;
   padding: 10px 10px 8px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .nc-source-panel-header h4 {
@@ -310,8 +310,8 @@ body {
 
 .nc-source-list {
   position: relative;
-  flex: 1 1 auto;
-  min-height: 160px;
+  flex: 1 1 160px;
+  min-height: 120px;
   overflow: auto;
   background: rgba(0, 0, 0, 0.18);
   font: 12px/24px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -500,9 +500,18 @@ body {
 .stl-upload-page button {
   margin-top: 8px;
 }
-.nc-query-panel { margin: 0.75rem 0 0; }
+.nc-query-panel {
+  margin: 0.75rem 0 0; 
+  max-height: min(42vh, 360px);
+  overflow: hidden;
+}
+
 .nc-query-card { border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 0.75rem; background: rgba(255,255,255,0.03); }
-.nc-source-panel-header .nc-query-card { display: flex; flex-direction: column; max-height: min(42vh, 360px); }
+.nc-source-panel-header .nc-query-card {
+  display: flex;
+  flex-direction: column;
+  max-height: inherit; 
+}
 .nc-query-summary { color: #5ce1ff; cursor: pointer; font-weight: 700; }
 .nc-query-body { min-height: 0; overflow-y: auto; padding-top: 0.5rem; }
 .nc-query-controls, .nc-query-row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: end; margin: 0.4rem 0; }
