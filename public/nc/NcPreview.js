@@ -1,6 +1,6 @@
 import { NC_MAX_FILE_BYTES } from './nc-parser.mjs';
 import { importNcToCanonicalDocument } from './import/canonical-normalizer.mjs';
-import { applyUpdateCanonicalNumericFieldCommand, createEditedNcFilename, deleteCanonicalLinesCommand, getCanonicalLineEditReadModel } from './document/CanonicalNcEditor.mjs';
+import { applyBatchNumericOperationCommand, applyUpdateCanonicalNumericFieldCommand, buildBatchNumericEditPlan, createBatchNumericOperation, createEditedNcFilename, deleteCanonicalLinesCommand, getCanonicalLineEditReadModel } from './document/CanonicalNcEditor.mjs';
 import { serializeCanonicalNcDocument } from './document/CanonicalNcDocument.mjs';
 import { recalculateCanonicalExecution } from './execution/NcCanonicalExecution.mjs';
 import { analyzeNcExecutionCache } from './execution/NcProgramAnalysis.mjs';
@@ -77,6 +77,8 @@ export function createNcPreview(ctx) {
     onSelectAll: () => selection.selectAll('command'),
     onTogglePreviousOverlay: (visible) => { previousOverlayVisible = visible; ncScene.setPreviousGeometryOverlayVisible(visible, lastImpact?.previousOverlaySegments); },
     onCanonicalFieldCommit: (command) => commitCanonicalField(command),
+    onBatchNumericPreview: (draft) => previewBatchNumeric(draft),
+    onBatchNumericApply: (draft) => applyBatchNumeric(draft),
     onDownloadNormalized: () => downloadNormalizedCandidate(),
     onApplySelectionQuery: (query, mode) => applySelectionQuery(query, mode),
     getActiveDocumentRevision: () => activeDocument?.revision ?? null
@@ -196,6 +198,37 @@ export function createNcPreview(ctx) {
     ncUi.setDirtyState(Boolean(activeDocument.dirty));
   }
 
+
+
+  function previewBatchNumeric(draft) {
+    const operationResult = createBatchNumericOperation(draft);
+    if (!operationResult.ok) { ncUi.showBatchNumericPlan(operationResult); return operationResult; }
+    const plan = buildBatchNumericEditPlan({ document: activeDocument, lineIds: selection.getSelection().orderedLineIds, operation: operationResult.operation });
+    ncUi.showBatchNumericPlan(plan);
+    return plan;
+  }
+
+  function applyBatchNumeric(draft) {
+    const beforeSelection = selection.getSelection();
+    const operationResult = createBatchNumericOperation(draft);
+    if (!operationResult.ok) { ncUi.showBatchNumericPlan(operationResult); return; }
+    const plan = buildBatchNumericEditPlan({ document: activeDocument, lineIds: beforeSelection.orderedLineIds, operation: operationResult.operation });
+    if (!plan.ok) { ncUi.showBatchNumericPlan(plan); return; }
+    const result = applyBatchNumericOperationCommand({ document: activeDocument, previousCache: activeCache, initialCanonicalText, expectedRevision: activeDocument?.revision, operation: operationResult.operation, plan });
+    if (!result.ok) { ncUi.showBatchNumericPlan(result); return; }
+    ncUi.showBatchNumericPlan(result.plan);
+    if (result.noOp) { ncUi.setNcStatus(result.plan.summary || 'Batch operation has no changes.'); return; }
+    commitWorkspaceTransition({
+      kind: 'batch-numeric-operation',
+      label: `Batch ${operationResult.operation.type} ${operationResult.operation.targetField} on ${result.changedLineIds.length} line${result.changedLineIds.length === 1 ? '' : 's'}`,
+      candidateDocument: result.document,
+      executionUpdate: result.executionUpdate,
+      firstAffectedIndex: result.firstAffectedIndex,
+      selectionBefore: beforeSelection,
+      selectionAfter: reconcileSelectionToDocument(beforeSelection, result.document),
+      changedLineIds: result.changedLineIds
+    });
+  }
 
   function commitCanonicalField(command) {
     const beforeSelection = selection.getSelection();
