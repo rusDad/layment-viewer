@@ -6,6 +6,7 @@ import { recalculateCanonicalExecution } from './execution/NcCanonicalExecution.
 import { analyzeNcExecutionCache } from './execution/NcProgramAnalysis.mjs';
 import { NcEditHistory } from './document/NcEditHistory.mjs';
 import { buildNcEditImpact } from './document/NcEditImpact.mjs';
+import { applySemanticTranslationCommand, buildSemanticTranslationPlan, buildTranslatedCandidateDocument, verifySemanticTranslationPlan } from './document/NcSemanticTranslation.mjs';
 import { createNcScene } from './NcScene.js';
 import { NcPickingController } from './NcPickingController.js';
 import { NcSelectionController, orderedSelection } from './NcSelectionController.js';
@@ -55,6 +56,7 @@ export function createNcPreview(ctx) {
   const history = new NcEditHistory();
   let activeDimensions = null;
   let activeFilename = null;
+  let translationPreview = null;
   let ncUi;
   const selection = new NcSelectionController({
     onHoverChange: (segmentId) => {
@@ -79,6 +81,9 @@ export function createNcPreview(ctx) {
     onCanonicalFieldCommit: (command) => commitCanonicalField(command),
     onBatchNumericPreview: (draft) => previewBatchNumeric(draft),
     onBatchNumericApply: (draft) => applyBatchNumeric(draft),
+    onTranslationPreview: (draft) => previewTranslation(draft),
+    onTranslationApply: (draft) => applyTranslation(draft),
+    onTranslationClear: () => clearTranslationPreview(),
     onDownloadNormalized: () => downloadNormalizedCandidate(),
     onApplySelectionQuery: (query, mode) => applySelectionQuery(query, mode),
     getActiveDocumentRevision: () => activeDocument?.revision ?? null
@@ -162,6 +167,8 @@ export function createNcPreview(ctx) {
     history.clear();
     lastImpact = null;
     ncScene.clearPreviousGeometryOverlay();
+    ncScene.clearCandidateGeometryOverlay();
+    translationPreview = null;
     selection.clearAll();
     activeToolpath = toolpath;
     activeDimensions = dimensions;
@@ -228,6 +235,62 @@ export function createNcPreview(ctx) {
       selectionAfter: reconcileSelectionToDocument(beforeSelection, result.document),
       changedLineIds: result.changedLineIds
     });
+  }
+
+  function previewTranslation(draft) {
+    const beforeSelection = selection.getSelection();
+    const plan = buildSemanticTranslationPlan({ document: activeDocument, previousCache: activeCache, lineIds: beforeSelection.orderedLineIds, dxMm: Number(draft?.dxMm), dyMm: Number(draft?.dyMm) });
+    if (!plan.ok || !plan.applicable) {
+      translationPreview = null;
+      ncScene.clearCandidateGeometryOverlay();
+      ncUi.showTranslationPlan(plan);
+      return plan;
+    }
+    const candidate = buildTranslatedCandidateDocument({ document: activeDocument, plan, initialCanonicalText });
+    if (!candidate.ok) { ncUi.showTranslationPlan(candidate); return candidate; }
+    let executionUpdate;
+    try { executionUpdate = recalculateCanonicalExecution({ document: candidate.document, previousCache: activeCache, firstAffectedIndex: plan.earliestAffectedLineIndex }); }
+    catch (err) {
+      const failed = { ok: false, error: { code: 'execution-failed', message: err instanceof Error ? err.message : String(err) } };
+      ncUi.showTranslationPlan(failed);
+      return failed;
+    }
+    const verification = verifySemanticTranslationPlan({ beforeDocument: activeDocument, beforeCache: activeCache, candidateDocument: candidate.document, candidateCache: executionUpdate.cache, plan });
+    const displayPlan = Object.freeze({ ...plan, verification, applicable: plan.applicable && verification.ok });
+    const changedIds = new Set([...displayPlan.expectedChangedLineIds, ...displayPlan.expectedConnectorChanges.map((c) => c.lineId)]);
+    ncScene.setPreviousGeometryOverlay(activeCache.segments.filter((s) => changedIds.has(s.sourceLineId)), { visible: previousOverlayVisible });
+    ncScene.setCandidateGeometryOverlay(executionUpdate.cache.segments.filter((s) => changedIds.has(s.sourceLineId)));
+    translationPreview = verification.ok ? { plan: displayPlan, selectionBefore: beforeSelection } : null;
+    ncUi.showTranslationPlan(displayPlan);
+    return displayPlan;
+  }
+
+  function applyTranslation(draft) {
+    const plan = translationPreview?.plan ?? buildSemanticTranslationPlan({ document: activeDocument, previousCache: activeCache, lineIds: selection.getSelection().orderedLineIds, dxMm: Number(draft?.dxMm), dyMm: Number(draft?.dyMm) });
+    const result = applySemanticTranslationCommand({ document: activeDocument, previousCache: activeCache, initialCanonicalText, expectedRevision: activeDocument?.revision, plan });
+    if (!result.ok) { ncUi.showTranslationPlan(result); return; }
+    ncUi.showTranslationPlan(result.plan);
+    if (result.noOp) { ncUi.setNcStatus('Semantic translation has no changes.'); return; }
+    const beforeSelection = translationPreview?.selectionBefore ?? selection.getSelection();
+    clearTranslationPreview();
+    commitWorkspaceTransition({
+      kind: 'semantic-translation',
+      label: `Translate ${result.changedLineIds.length} canonical line${result.changedLineIds.length === 1 ? '' : 's'} by ΔX ${plan.dxMm}, ΔY ${plan.dyMm}`,
+      candidateDocument: result.document,
+      executionUpdate: result.executionUpdate,
+      firstAffectedIndex: result.firstAffectedIndex,
+      selectionBefore: beforeSelection,
+      selectionAfter: reconcileSelectionToDocument(beforeSelection, result.document),
+      changedLineIds: result.changedLineIds
+    });
+  }
+
+  function clearTranslationPreview() {
+    translationPreview = null;
+    ncScene.clearCandidateGeometryOverlay();
+    if (lastImpact) ncScene.setPreviousGeometryOverlay(lastImpact.previousOverlaySegments, { visible: previousOverlayVisible });
+    else ncScene.clearPreviousGeometryOverlay();
+    ncUi.showTranslationPlan(null);
   }
 
   function commitCanonicalField(command) {
@@ -417,6 +480,7 @@ export function createNcPreview(ctx) {
       activeFilename = null;
       history.clear();
       lastImpact = null;
+      translationPreview = null;
       ncUi.showImpactSummary(null);
       ncUi.setHistoryState(history.getState(), false);
       ncUi.clearEditInspector();
@@ -437,6 +501,7 @@ export function createNcPreview(ctx) {
       activeFilename = null;
       history.clear();
       lastImpact = null;
+      translationPreview = null;
       ncUi.showImpactSummary(null);
       ncUi.setHistoryState(history.getState(), false);
       ncUi.clearEditInspector();

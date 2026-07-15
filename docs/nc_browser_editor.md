@@ -1704,3 +1704,13 @@ The query panel keeps the draft after edits, delete, undo and redo, but previous
 Known non-goals for NC-E5 remain: no free-text query language, regex/source substring search, spatial rectangle/polygon selection, live query while typing, saved presets, batch edit operations, query history, Web Worker, virtualized source list or parser dialect expansion.
 
 NC-E5 acceptance is complete. The next planned stage is NC-E6: batch numeric operations over the existing query-created selection.
+
+## Current roadmap status — NC-E7 geometric translation
+
+NC-E7 is implemented in Layment Viewer as a semantic edit-plan operation over `CanonicalNcDocument` selected line IDs. It supports finite millimetre ΔX/ΔY values for canonical absolute `G0` and `G1` records only: canonical X/Y endpoints are translated, while motion type, Z, feed, stable `lineId`, provenance and unrelated metadata are preserved. Planning is revision-bound and non-mutating; applying a valid plan updates the canonical document atomically, increments the revision once, and creates one undoable history transaction.
+
+The translation planner groups selected linear motions into execution-contiguous ranges rather than raw adjacent array slices. Comments and supported non-motion lines can appear inside a selected range and are reported as ignored. Unsupported/opaque lines, malformed lines, non-finite X/Y values, and selected `G2/G3` arcs block the entire operation. A translated range followed by an unselected `G2/G3` line is also blocked, because moving the previous endpoint would alter the arc start geometry; arc-aware boundary handling remains the next NC-E8 transform step.
+
+Preview execution builds the actual translated candidate canonical document and incrementally executes it from the earliest affected line. The debug UI displays the previous/candidate overlay, including changed outgoing linear connectors outside the explicit selection. Semantic verification checks translated endpoints, range boundary/interior segment geometry, changed outgoing connectors, deterministic serialization, execution diagnostics, and supported linear-only segment stability before Apply is enabled.
+
+NC-E8 remains the next planned step for arc-aware transforms of canonical `G2/G3` endpoints and centers with deterministic `I/J` serialization and expanded arc geometry verification.
