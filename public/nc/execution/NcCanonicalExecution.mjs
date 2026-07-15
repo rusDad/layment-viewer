@@ -43,7 +43,7 @@ export function executeCanonicalLine(line, inputState, canonicalIndex, execution
 
   outputState = freezeState({ position: end, feed });
   const start = point3(inputState.position);
-  if (samePoint3(start, end)) {
+  if (!ARC_MOTIONS.has(line.motion) && samePoint3(start, end)) {
     return entry(line, canonicalIndex, inputState, outputState, command, segments, diagnostics);
   }
 

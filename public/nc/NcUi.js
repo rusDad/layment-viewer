@@ -617,7 +617,7 @@ export function createNcUi(ctx) {
     applyButton.disabled = !(lastTranslationPlan?.applicable && lastTranslationPlan?.verification?.ok);
     actions.append(previewButton, applyButton, button('Clear preview', () => { lastTranslationPlan = null; onTranslationClear?.(); rerenderCurrentInspector(); }));
     section.append(actions);
-    const hint = document.createElement('p'); hint.className = 'section-hint'; hint.textContent = `Plans an absolute canonical X/Y translation for ${ids.length} selected G0/G1 line${ids.length === 1 ? '' : 's'} and previews changed boundary connectors.`;
+    const hint = document.createElement('p'); hint.className = 'section-hint'; hint.textContent = `Plans an absolute canonical X/Y translation for ${ids.length} selected G0/G1/G2/G3 line${ids.length === 1 ? '' : 's'} and previews changed boundary connectors. Arcs require their executed start endpoint to be in the translated range.`;
     section.append(hint);
     ncEditInspectorEl.append(section);
     renderTranslationPlan(section);
@@ -629,12 +629,12 @@ export function createNcUi(ctx) {
     if (!lastTranslationPlan) return;
     const p = document.createElement('p'); p.className = `status ${lastTranslationPlan.ok ? (lastTranslationPlan.applicable ? 'status-meta' : 'status-error') : 'status-error'}`;
     p.textContent = lastTranslationPlan.ok
-      ? `selected=${lastTranslationPlan.targetLineIds?.length ?? 0}, G0/G1=${lastTranslationPlan.translatedLineCount ?? 0}, ignored=${lastTranslationPlan.ignoredLineCount ?? 0}, blockers=${lastTranslationPlan.blockerCount ?? 0}, ranges=${lastTranslationPlan.rangeCount ?? 0}, ΔX=${lastTranslationPlan.dxMm}, ΔY=${lastTranslationPlan.dyMm}, earliest=${lastTranslationPlan.earliestAffectedLineIndex == null ? 'n/a' : lastTranslationPlan.earliestAffectedLineIndex + 1}, boundary connectors=${lastTranslationPlan.connectorChangeCount ?? 0}, verification=${lastTranslationPlan.verification?.ok ? 'ok' : 'failed'}, applicable=${lastTranslationPlan.applicable ? 'yes' : 'no'}`
+      ? `selected=${lastTranslationPlan.targetLineIds?.length ?? 0}, linear=${lastTranslationPlan.translatedLinearLineCount ?? 0}, arcs=${lastTranslationPlan.translatedArcLineCount ?? 0}, ignored=${lastTranslationPlan.ignoredLineCount ?? 0}, blockers=${lastTranslationPlan.blockerCount ?? 0}, arc-boundaries=${lastTranslationPlan.blockedArcBoundaries?.length ?? 0}, ranges=${lastTranslationPlan.rangeCount ?? 0}, ΔX=${lastTranslationPlan.dxMm}, ΔY=${lastTranslationPlan.dyMm}, earliest=${lastTranslationPlan.earliestAffectedLineIndex == null ? 'n/a' : lastTranslationPlan.earliestAffectedLineIndex + 1}, boundary connectors=${lastTranslationPlan.connectorChangeCount ?? 0}, arc verification=${lastTranslationPlan.verification?.ok ? 'ok' : 'failed'}, applicable=${lastTranslationPlan.applicable ? 'yes' : 'no'}`
       : `${lastTranslationPlan.error?.code}: ${lastTranslationPlan.error?.message}`;
     section.append(p);
     if (lastTranslationPlan.ok && lastTranslationPlan.translated?.length) {
       const pre = document.createElement('pre'); pre.className = 'nc-inspector-source';
-      pre.textContent = lastTranslationPlan.translated.slice(0, 5).map((c)=>`${c.canonicalIndex + 1} ${c.motion}: X${c.before.x},Y${c.before.y} → X${c.after.x},Y${c.after.y}`).join('\n');
+      pre.textContent = lastTranslationPlan.translated.slice(0, 5).map((c)=>`${c.canonicalIndex + 1} ${c.motion}: end X${c.before.x},Y${c.before.y} → X${c.after.x},Y${c.after.y}${c.beforeCenter ? `; center X${c.beforeCenter.x},Y${c.beforeCenter.y} → X${c.afterCenter.x},Y${c.afterCenter.y}` : ''}`).join('\n');
       section.append(pre);
     }
     if (lastTranslationPlan.ok && lastTranslationPlan.blockers?.length) {
