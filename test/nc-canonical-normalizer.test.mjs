@@ -100,4 +100,38 @@ for (let i = 0; i < rawToolpath.segments.length; i += 1) {
   assert.equal(canonical.toolpath.segments[i].feed, rawToolpath.segments[i].feed ?? 0);
 }
 
+
+const preserved = mustImport(`%
+; standalone
+(parenthesized)
+N10 T2 M6 S12000 G1 X1 Y2 Z-3 F400 ; inline motion
+M3 S9000
+T4
+G40
+G49
+G54
+G80
+
+G20 G91 (inch incremental setup)
+G1 X1 Y0 Z0 F10
+`);
+const preservedText = serializeCanonicalNcDocument(preserved.canonicalDocument);
+assert.match(preservedText, /^%\n; standalone\n\(parenthesized\)/, 'program delimiters, blank/comment blocks survive');
+assert.match(preservedText, /N10 T2 M6 S12000 G1 X1 Y2 Z-3 F400 ; inline motion/, 'mixed motion block preserves N/T/M/S and inline comments');
+assert.match(preservedText, /M3 S9000\nT4\nG40\nG49\nG54\nG80/, 'standalone machine and safety commands survive');
+assert.match(preservedText, /\(inch incremental setup\)\nG1 X26\.4 Y2 Z-3 F10/, 'consumed modal-only comments survive without contradictory G20/G91 output');
+assert.equal(/G20|G91/.test(preservedText), false, 'consumed unit/distance mode commands are not serialized into normalized output');
+
+const editedPreserved = mustImport('N20 T7 M3 S5000 G1 X1 Y2 Z3 F4 (keep me) ; and me\n');
+const line = editedPreserved.canonicalDocument.lines[0];
+const editedDoc = Object.freeze({ ...editedPreserved.canonicalDocument, lines: Object.freeze([{ ...line, end: { ...line.end, x: 9 }, feed: 44 }]) });
+assert.equal(serializeCanonicalNcDocument(editedDoc), 'N20 T7 M3 S5000 G1 X9 Y2 Z3 F44 (keep me) ; and me\n');
+
+const unsupportedGeometry = importNcToCanonicalDocument('G5 X1 Y1\n');
+assert.equal(unsupportedGeometry.ok, false);
+assert.equal(unsupportedGeometry.diagnostics[0].code, 'unsupported-motion-affecting-command');
+
+const roundTrip = mustImport(preservedText);
+assert.deepEqual(roundTrip.toolpath.segments.map((s) => ({ motion: s.motion, start: s.start, end: s.end, feed: s.feed })), preserved.toolpath.segments.map((s) => ({ motion: s.motion, start: s.start, end: s.end, feed: s.feed })));
+
 console.log('OK: NC canonical normalizer regression passed.');

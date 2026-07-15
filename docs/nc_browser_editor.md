@@ -1585,7 +1585,7 @@ NC-E1 normalizes the subset already executed deterministically by the viewer par
 - modal feed values;
 - explicit `G20` inch units and `G91` incremental coordinates when the existing parser can deterministically convert them to absolute millimetres at import time.
 
-NC-E1 preserves comments and safe opaque non-motion service lines such as supported `M` commands, tool/spindle/feed-only service state, without giving them editable semantic behavior.
+NC-E1 preserves comments and safe opaque non-motion service lines such as supported `M` commands, tool/spindle/feed-only service state, without giving them editable semantic behavior. Canonical block preservation is structured: the importer attaches block tokens to canonical lines, motion coordinates/feed/arc parameters remain editable canonical fields, and serialization rewrites only those canonical fields while retaining unrelated sequence, tool, spindle, machine and comment tokens where practical. Unit, distance, plane and arc-center modal words consumed by normalization are not emitted as contradictory preserved text; comments attached to those consumed modal-only blocks survive as canonical comments. Non-geometric safety/service commands such as `G40`, `G49`, `G54` and `G80` remain preserved opaque blocks.
 
 NC-E1 rejects unsupported or ambiguous constructs with structured diagnostics rather than silently dropping them, including unsupported planes, unsupported unit/positioning semantics, unsupported motion-affecting commands, invalid arcs, non-finite numeric words and canonical invariant violations.
 

@@ -20,6 +20,7 @@ const LINEAR = new Set(['G0', 'G1']);
 const ARC = new Set(['G2', 'G3']);
 const PRESERVED_G_CODES = new Set(['G17', 'G20', 'G21','G40','G49', 'G54', 'G80', 'G90', 'G91', 'G90.1', 'G91.1']);
 const PRESERVED_M_CODES = new Set(['M0', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M30']);
+const CONSUMED_MODAL_G_CODES = new Set(['G17', 'G20', 'G21', 'G90', 'G91', 'G90.1', 'G91.1']);
 
 export function importNcToCanonicalDocument(text, options = {}) {
   const rawDocument = createRawNcDocument(text, { filename: options.filename });
@@ -45,6 +46,7 @@ export function normalizeRawNcDocument(rawDocument, options = {}) {
 
   for (const item of program) {
     const words = item.words;
+    const block = createCanonicalBlock(item.text);
     const rawLineNumber = item.lineNumber;
     const occurrence = canonicalLines.length;
     if (hasMalformedNumericWord(item.text) || words.some((word) => !Number.isFinite(word.value))) {
@@ -102,6 +104,7 @@ export function normalizeRawNcDocument(rawDocument, options = {}) {
         feed,
         arc,
         text: null,
+        block,
         sourceOrigin: origin(rawLineNumber, 'materialized-motion'),
         parseStatus: 'ok'
       });
@@ -110,15 +113,27 @@ export function normalizeRawNcDocument(rawDocument, options = {}) {
     }
 
     currentPosition = currentPosition;
-    if (isCanonicalProfileModalOnly(words, gCodes)) {
+    if (isConsumedModalOnly(words, gCodes)) {
+      const comments = block.tokens.filter((token) => token.type === 'comment').map((token) => token.raw).join(' ');
+      if (comments) {
+        canonicalLines.push({
+          lineId: createCanonicalLineId(rawDocument, rawLineNumber, occurrence),
+          kind: 'comment',
+          text: comments,
+          block,
+          sourceOrigin: origin(rawLineNumber, 'preserved-consumed-modal-comment'),
+          parseStatus: 'ok'
+        });
+      }
       continue;
     }
 
-    if (isCommentOrBlank(item.text) || isPreservableNonMotion(words, gCodes, mCodes)) {
+    if (isCommentBlankOrDelimiter(item.text) || isPreservableNonMotion(words, gCodes, mCodes)) {
       canonicalLines.push({
         lineId: createCanonicalLineId(rawDocument, rawLineNumber, occurrence),
-        kind: isCommentOrBlank(item.text) ? 'comment' : 'opaque',
+        kind: isCommentBlankOrDelimiter(item.text) ? (String(item.text).trim() === '' ? 'empty' : 'comment') : 'opaque',
         text: item.text,
+        block,
         sourceOrigin: origin(rawLineNumber, isCommentOrBlank(item.text) ? 'preserved-comment' : 'preserved-opaque'),
         parseStatus: 'ok'
       });
@@ -184,10 +199,15 @@ function isCommentOrBlank(text) {
   return trimmed === '' || trimmed.startsWith(';') || /^\(.*\)$/.test(trimmed);
 }
 
-function isCanonicalProfileModalOnly(words, gCodes) {
+function isCommentBlankOrDelimiter(text) {
+  const trimmed = String(text).trim();
+  return isCommentOrBlank(text) || trimmed === '%';
+}
+
+function isConsumedModalOnly(words, gCodes) {
   return words.length > 0 && words.every((word) => {
-    if (word.letter === 'G') return PRESERVED_G_CODES.has(normalizeGCode(word.value));
-    return word.letter === 'F' || word.letter === 'T' || word.letter === 'S';
+    if (word.letter === 'G') return CONSUMED_MODAL_G_CODES.has(normalizeGCode(word.value));
+    return false;
   }) && gCodes.length > 0;
 }
 
@@ -208,4 +228,44 @@ function diagnostic(code, lineNumber, message) {
 
 function finitePoint(point) {
   return ['x', 'y', 'z'].every((axis) => Number.isFinite(point[axis]));
+}
+
+function createCanonicalBlock(text) {
+  return Object.freeze({ rawText: text, tokens: Object.freeze(tokenizeNcBlock(text).map(Object.freeze)) });
+}
+
+function tokenizeNcBlock(text) {
+  const tokens = [];
+  const source = String(text ?? '');
+  let code = '';
+  let inParen = false;
+  let paren = '';
+  for (let i = 0; i < source.length; i += 1) {
+    const char = source[i];
+    if (char === ';' && !inParen) {
+      if (code.trim()) tokens.push(...wordTokens(code));
+      tokens.push({ type: 'comment', raw: source.slice(i).trim() });
+      return tokens;
+    }
+    if (char === '(' && !inParen) {
+      if (code.trim()) { tokens.push(...wordTokens(code)); code = ''; }
+      inParen = true; paren = char; continue;
+    }
+    if (char === ')' && inParen) {
+      paren += char; tokens.push({ type: 'comment', raw: paren.trim() }); inParen = false; paren = ''; continue;
+    }
+    if (inParen) paren += char;
+    else code += char;
+  }
+  if (code.trim()) tokens.push(...wordTokens(code));
+  if (paren.trim()) tokens.push({ type: 'comment', raw: paren.trim() });
+  return tokens;
+}
+
+function wordTokens(code) {
+  const tokens = [];
+  const wordPattern = /([A-Z])\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))/ig;
+  let match;
+  while ((match = wordPattern.exec(code)) !== null) tokens.push({ type: 'word', raw: `${match[1].toUpperCase()}${match[2]}`, letter: match[1].toUpperCase(), value: Number(match[2]) });
+  return tokens;
 }
