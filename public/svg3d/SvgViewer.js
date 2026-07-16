@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { resolveTextOverlayTransform } from './TextOverlayTransform.js';
 
 
 export class SvgViewer {
@@ -372,7 +373,6 @@ function buildTextOverlayGroup(geometry, texts = []) {
 
 
 function createTextOverlayMesh(textItem, outerWidthMm, outerHeightMm) {
-  console.log('text item for overlay', textItem);
   try {
     if (!textItem || typeof textItem !== 'object') {
       return null;
@@ -415,13 +415,21 @@ function createTextOverlayMesh(textItem, outerWidthMm, outerHeightMm) {
       //alphaTest: 0.05
     });
     const mesh = new THREE.Mesh(plane, material);
+    const transform = resolveTextOverlayTransform({
+      xMm,
+      yMm,
+      widthMm: texturePayload.widthMm,
+      heightMm: texturePayload.heightMm,
+      angleDeg,
+      outerHeightMm
+    });
 
     mesh.position.set(
-      xMm + texturePayload.widthMm / 2,
-      outerHeightMm - yMm - texturePayload.heightMm / 2,
+      transform.x,
+      transform.y,
       TEXT_OVERLAY_Z_OFFSET_MM
     );
-    mesh.rotation.z = Number.isFinite(angleDeg) ? THREE.MathUtils.degToRad(angleDeg) : 0;
+    mesh.rotation.z = transform.rotationZRad;
     mesh.renderOrder = 1;
     mesh.castShadow = false;
     mesh.receiveShadow = false;
