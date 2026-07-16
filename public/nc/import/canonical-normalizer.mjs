@@ -49,6 +49,17 @@ export function normalizeRawNcDocument(rawDocument, options = {}) {
     const block = createCanonicalBlock(item.text);
     const rawLineNumber = item.lineNumber;
     const occurrence = canonicalLines.length;
+    if (isApostropheComment(item.text)) {
+      canonicalLines.push({
+        lineId: createCanonicalLineId(rawDocument, rawLineNumber, occurrence),
+        kind: 'comment',
+        text: item.text,
+        block,
+        sourceOrigin: origin(rawLineNumber, 'preserved-comment'),
+        parseStatus: 'ok'
+      });
+      continue;
+    }
     if (hasMalformedNumericWord(item.text) || words.some((word) => !Number.isFinite(word.value))) {
       diagnostics.push(diagnostic('non-finite-coordinate', rawLineNumber, 'Non-finite numeric input is not supported.'));
       continue;
@@ -194,9 +205,13 @@ function findBlockingCode(gCodes, wordsByLetter) {
   return null;
 }
 
+function isApostropheComment(text) {
+  return String(text).trimStart().startsWith("'");
+}
+
 function isCommentOrBlank(text) {
   const trimmed = String(text).trim();
-  return trimmed === '' || trimmed.startsWith(';') || /^\(.*\)$/.test(trimmed);
+  return trimmed === '' || trimmed.startsWith(';') || /^\(.*\)$/.test(trimmed) || isApostropheComment(text);
 }
 
 function isCommentBlankOrDelimiter(text) {
@@ -237,6 +252,7 @@ function createCanonicalBlock(text) {
 function tokenizeNcBlock(text) {
   const tokens = [];
   const source = String(text ?? '');
+  if (isApostropheComment(source)) return [{ type: 'comment', raw: source.trim() }];
   let code = '';
   let inParen = false;
   let paren = '';

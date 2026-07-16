@@ -122,6 +122,20 @@ assert.match(preservedText, /M3 S9000\nT4\nG40\nG49\nG54\nG80/, 'standalone mach
 assert.match(preservedText, /\(inch incremental setup\)\nG1 X26\.4 Y2 Z-3 F10/, 'consumed modal-only comments survive without contradictory G20/G91 output');
 assert.equal(/G20|G91/.test(preservedText), false, 'consumed unit/distance mode commands are not serialized into normalized output');
 
+const apostropheComments = mustImport(`G1 X1 Y2 Z-3 F400
+' CONTOUR id=634135-ph3-150 angle=180.0
+' PRIMITIVES END
+' PRIMITIVE #13 type=rect x=406.0 y=11.0 width=15.0 height=31.0
+X2
+`);
+assert.equal(apostropheComments.canonicalText, `G1 X1 Y2 Z-3 F400
+' CONTOUR id=634135-ph3-150 angle=180.0
+' PRIMITIVES END
+' PRIMITIVE #13 type=rect x=406.0 y=11.0 width=15.0 height=31.0
+G1 X2 Y2 Z-3 F400
+`);
+assert.equal(apostropheComments.toolpath.segments.length, 2, 'apostrophe comments must not materialize fake X/Y motion');
+
 const editedPreserved = mustImport('N20 T7 M3 S5000 G1 X1 Y2 Z3 F4 (keep me) ; and me\n');
 const line = editedPreserved.canonicalDocument.lines[0];
 const editedDoc = Object.freeze({ ...editedPreserved.canonicalDocument, lines: Object.freeze([{ ...line, end: { ...line.end, x: 9 }, feed: 44 }]) });
