@@ -85,7 +85,7 @@ export function createNcPreview(ctx) {
     onTranslationApply: (draft) => applyTranslation(draft),
     onTranslationClear: () => clearTranslationPreview(),
     onDownloadNormalized: () => downloadNormalizedCandidate(),
-    onApplySelectionQuery: (query, mode) => applySelectionQuery(query, mode),
+    onApplySelectionQuery: (query, mode, filterSource) => applySelectionQuery(query, mode, filterSource),
     getActiveDocumentRevision: () => activeDocument?.revision ?? null
   });
   const ncPicking = new NcPickingController({
@@ -313,13 +313,15 @@ export function createNcPreview(ctx) {
     });
   }
 
-  function applySelectionQuery(query, mode = 'replace') {
+  function applySelectionQuery(query, mode = 'replace', filterSource = false) {
     const result = evaluateNcSelectionQuery({ document: activeDocument, cache: activeCache, analysis: activeToolpath, currentSelection: selection.getSelection(), query });
-    if (!result.ok) { ncUi.showSelectionQueryResult(result, activeToolpath, activeCache, activeDocument); return; }
-    const order = activeDocument?.lines?.map((line) => line.lineId) ?? [];
-    const ids = mode === 'add' ? [...selection.getSelection().orderedLineIds, ...result.lineIds] : result.lineIds;
-    selection.setSelection(orderedSelection(ids, order, result.lineIds[0] ?? ids[0] ?? null, result.lineIds.at(-1) ?? ids.at(-1) ?? null, 'query'));
-    ncUi.showSelectionQueryResult(result, activeToolpath, activeCache, activeDocument);
+    if (!result.ok) { ncUi.showSelectionQueryResult(result); return; }
+    if (!filterSource) {
+      const order = activeDocument?.lines?.map((line) => line.lineId) ?? [];
+      const ids = mode === 'add' ? [...selection.getSelection().orderedLineIds, ...result.lineIds] : result.lineIds;
+      selection.setSelection(orderedSelection(ids, order, result.lineIds[0] ?? ids[0] ?? null, result.lineIds.at(-1) ?? ids.at(-1) ?? null, 'query'));
+    }
+    ncUi.showSelectionQueryResult(result, { filterSource });
   }
 
   function deleteSelectedLines() {
