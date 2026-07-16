@@ -3,6 +3,8 @@ import { createRawNcDocument } from '../public/nc/document/RawNcDocument.mjs';
 import { createCanonicalNcDocument } from '../public/nc/document/CanonicalNcDocument.mjs';
 import { executeCanonicalDocument } from '../public/nc/execution/NcCanonicalExecution.mjs';
 import { evaluateNcSelectionQuery } from '../public/nc/NcSelectionQuery.mjs';
+import { NcSelectionController, orderedSelection } from '../public/nc/NcSelectionController.js';
+import { getNcSourceVirtualWindow, projectNcSourceLines } from '../public/nc/NcSourceProjection.mjs';
 
 const raw = createRawNcDocument('G0\nG1\nG2\nG3\n;comment\nM3\n', { filename: 'q.nc' });
 const motion = (lineId, motion, i, z, feed) => Object.freeze({ lineId, kind: 'motion', motion, start: { x: i-1, y: 0, z: 0 }, end: { x: i, y: 0, z }, feed, arc: motion === 'G2' || motion === 'G3' ? { center: { x: i - 0.5, y: 0.5 } } : null, text: null, sourceOrigin: { rawLineNumbers: [i], normalizationKind: 'test' }, parseStatus: 'ok' });
@@ -38,4 +40,26 @@ const perf = evaluateNcSelectionQuery({ document: perfDoc, cache: perfCache, que
 assert.equal(perf.scannedCount, 12000);
 assert.equal(executed, 0, 'query does not execute lines');
 assert.ok(perf.matchedCount > 0);
+
+const sourceLines = document.lines.map((line, index) => ({
+  lineId: line.lineId,
+  index,
+  number: (index + 1) * 10,
+  segmentIds: [`S${index}`]
+}));
+const filtered = projectNcSourceLines(sourceLines, new Set(['L1', 'L4']));
+assert.deepEqual(filtered.map((line) => line.lineId), ['L1', 'L4'], 'filter projection contains only query matches');
+assert.deepEqual(filtered.map((line) => [line.index, line.number, line.segmentIds]), [[0, 10, ['S0']], [3, 40, ['S3']]], 'filter projection preserves canonical row metadata');
+assert.equal(projectNcSourceLines(sourceLines), sourceLines, 'disabling the filter restores the full source projection');
+assert.equal(getNcSourceVirtualWindow(filtered.length, 0, 240).totalHeight, 48, 'virtual spacer uses displayed row count');
+assert.equal(getNcSourceVirtualWindow(sourceLines.length, 0, 240).totalHeight, 144, 'full projection has its own spacer height');
+assert.deepEqual(orderedSelection(['L4', 'L1'], sourceLines.map((line) => line.lineId)).orderedLineIds, ['L1', 'L4'], 'replace selection remains canonically ordered');
+assert.deepEqual(orderedSelection(['L2', ...filtered.map((line) => line.lineId)], sourceLines.map((line) => line.lineId)).orderedLineIds, ['L1', 'L2', 'L4'], 'add selection keeps existing and matched ids');
+
+const controller = new NcSelectionController({ getDocumentLineIds: () => sourceLines.map((line) => line.lineId) });
+controller.selectLineId(filtered[0].lineId, {}, 'source');
+controller.selectLineId(filtered[1].lineId, { shiftKey: true }, 'source');
+assert.deepEqual(controller.getSelection().orderedLineIds, ['L1', 'L2', 'L3', 'L4'], 'shift-click uses canonical order and includes filtered-out lines');
+controller.selectLineId(filtered[1].lineId, { ctrlKey: true }, 'source');
+assert.deepEqual(controller.getSelection().orderedLineIds, ['L1', 'L2', 'L3'], 'ctrl-click from filtered view keeps toggle semantics');
 console.log('OK: NC selection query tests passed.');
