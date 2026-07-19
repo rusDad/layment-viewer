@@ -54,6 +54,10 @@ const ncPreviewController = new NcPreview({
 
 viewerBase.init();
 ncPreviewController.init();
+initResponsivePanes();
+updateDocumentName();
+
+document.getElementById('nc-file')?.addEventListener('change', updateDocumentName);
 
 window.addEventListener('pagehide', () => {
   ncPreviewController.dispose();
@@ -71,4 +75,28 @@ function clearCurrentModel() {
     }
   });
   state.modelGroup = null;
+}
+
+function updateDocumentName() {
+  const file = document.getElementById('nc-file')?.files?.[0];
+  const nameEl = document.getElementById('nc-document-name');
+  if (nameEl) nameEl.textContent = file ? file.name : 'Новый документ';
+}
+
+function initResponsivePanes() {
+  const tabs = [...document.querySelectorAll('[data-nc-pane]')];
+  const panes = [...document.querySelectorAll('[data-nc-pane-content]')];
+
+  const activate = (name) => {
+    tabs.forEach((tab) => {
+      const active = tab.dataset.ncPane === name;
+      tab.classList.toggle('is-active', active);
+      tab.setAttribute('aria-pressed', String(active));
+    });
+    panes.forEach((pane) => pane.classList.toggle('is-active-pane', pane.dataset.ncPaneContent === name));
+    if (name === 'preview') requestAnimationFrame(() => viewerBase.resize());
+  };
+
+  tabs.forEach((tab) => tab.addEventListener('click', () => activate(tab.dataset.ncPane)));
+  activate('preview');
 }
