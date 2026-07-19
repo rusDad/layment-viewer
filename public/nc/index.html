@@ -3,70 +3,81 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>NC Tools — Layment Viewer</title>
+    <title>NC Toolpath — Layment Viewer</title>
     <link rel="stylesheet" href="../style.css" />
     <link rel="icon" href="../favicon.ico" sizes="any" />
     <script type="importmap">
-     {
-       "imports": {
-         "three": "https://cdn.jsdelivr.net/npm/three@0.185.0/build/three.module.js",
-         "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.0/examples/jsm/"
-       }
-     }
-     </script>
+     { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.185.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.0/examples/jsm/" } }
+    </script>
   </head>
-  <body class="viewer-mode-debug">
-    <div class="layout nc-tools-layout">
-      <aside class="panel debug-only">
-        <nav class="page-nav" aria-label="Viewer navigation">
-          <a href="../">← SVG viewer</a>
-        </nav>
+  <body class="viewer-mode-debug nc-app">
+    <div class="nc-shell">
+      <header class="nc-app-header">
+        <a class="nc-back-link" href="../">← <span>SVG viewer</span></a>
+        <div class="nc-app-title"><h1>NC Toolpath</h1><span class="nc-diagnostic-badge">Диагностика</span></div>
+        <div id="nc-document-name" class="nc-document-name" aria-live="polite">Новый документ</div>
+        <div class="nc-header-actions"><button id="nc-download-normalized" type="button" disabled>Скачать NC</button></div>
+      </header>
 
-        <section class="upload-section nc-section">
-          <h3>NC toolpath preview</h3>
-          <p class="section-hint">Debug-визуализация G0/G1/G2/G3 поверх габаритного box.</p>
+      <nav class="nc-pane-tabs" aria-label="Рабочие области">
+        <button type="button" class="is-active" data-nc-pane="preview" aria-pressed="true">Превью</button>
+        <button type="button" data-nc-pane="tools" aria-pressed="false">Параметры</button>
+        <button type="button" data-nc-pane="source" aria-pressed="false">NC-код</button>
+      </nav>
 
-          <label class="field field-full"><span>.nc file</span><input id="nc-file" type="file" accept=".nc,.gcode,.tap,text/plain" /></label>
-          <div class="field-grid">
-            <label class="field"><span>width mm</span><input id="nc-width" type="number" min="0.1" step="0.1" value="375" /></label>
-            <label class="field"><span>height mm</span><input id="nc-height" type="number" min="0.1" step="0.1" value="565" /></label>
-            <label class="field"><span>thickness mm</span><input id="nc-thickness" type="number" min="0.1" step="0.1" value="35" /></label>
-          </div>
-          <label class="field field-full range-field"><span>box opacity <output id="nc-opacity-value">0.30</output></span><input id="nc-opacity" type="range" min="0" max="1" step="0.01" value="0.30" /></label>
-          <button id="nc-preview" type="button">Build NC preview</button>
-          <div class="nc-edit-actions">
-            <button id="nc-delete-selected" type="button" disabled>Delete selected</button>
-            <button id="nc-undo" type="button" disabled>Undo</button>
-            <button id="nc-redo" type="button" disabled>Redo</button>
-            <button id="nc-reset-initial" type="button" disabled>Reset to initial</button>
-            <label class="nc-overlay-toggle"><input id="nc-previous-overlay" type="checkbox" checked /> Show previous geometry</label>
-          </div>
-          <button id="nc-download-normalized" type="button" disabled>Download normalized NC</button>
-          <div id="nc-status" class="status" role="status" aria-live="polite"></div>
-          <div id="nc-edit-inspector" class="nc-edit-inspector" aria-live="polite"></div>
-          <section id="nc-source-panel" class="nc-source-panel" aria-label="NC source" hidden>
-            <div class="nc-source-panel-header">
-              <div class="nc-source-title-row"><h4>NC source</h4><button id="nc-source-focus" type="button" class="nc-source-focus" disabled>Focus</button></div>
-              <div id="nc-query-panel" class="nc-query-panel"></div>
+      <div class="nc-workspace">
+        <aside class="nc-tools-pane" data-nc-pane-content="tools">
+          <section class="nc-control-group">
+            <div class="nc-group-heading"><h2>Исходные данные</h2><p>Параметры заготовки и файла</p></div>
+            <label class="field field-full"><span>NC-файл</span><input id="nc-file" type="file" accept=".nc,.gcode,.tap,text/plain" /></label>
+            <div class="field-grid">
+              <label class="field"><span>Ширина, мм</span><input id="nc-width" type="number" min="0.1" step="0.1" value="375" /></label>
+              <label class="field"><span>Высота, мм</span><input id="nc-height" type="number" min="0.1" step="0.1" value="565" /></label>
+              <label class="field"><span>Толщина, мм</span><input id="nc-thickness" type="number" min="0.1" step="0.1" value="35" /></label>
             </div>
-            <div id="nc-source-list" class="nc-source-list" role="listbox" aria-label="NC source lines" tabindex="0"></div>
+            <label class="field field-full range-field"><span>Прозрачность габарита <output id="nc-opacity-value">0.30</output></span><input id="nc-opacity" type="range" min="0" max="1" step="0.01" value="0.30" /></label>
+            <button id="nc-preview" class="nc-primary-action" type="button">Построить превью</button>
           </section>
-        </section>
-      </aside>
-      <main class="viewport">
-        <div id="canvas-root"></div>
-        <aside id="nc-hover-inspector" class="nc-hover-inspector debug-only" aria-live="polite" hidden></aside>
-        <section class="nc-color-toolbar debug-only" aria-label="NC color controls">
-          <label class="field nc-color-strategy-field"><span>color strategy</span><select id="nc-color-strategy"><option value="motion">Motion</option><option value="tool">Tool</option><option value="depth">Depth</option><option value="feed">Feed</option></select></label>
-          <div class="color-grid" aria-label="NC motion colors">
-            <label class="field"><span>G0</span><input id="nc-color-g0" type="color" value="#7fb7ff" /></label>
-            <label class="field"><span>G1</span><input id="nc-color-g1" type="color" value="#42d36b" /></label>
-            <label class="field"><span>G2</span><input id="nc-color-g2" type="color" value="#ffad33" /></label>
-            <label class="field"><span>G3</span><input id="nc-color-g3" type="color" value="#d45cff" /></label>
+
+          <section class="nc-control-group">
+            <div class="nc-group-heading"><h2>Редактирование</h2><p>Выборка и история документа</p></div>
+            <div class="nc-edit-actions nc-history-actions">
+              <button id="nc-delete-selected" type="button" disabled>Удалить выбранное</button>
+              <button id="nc-undo" type="button" disabled>Отменить</button>
+              <button id="nc-redo" type="button" disabled>Повторить</button>
+              <button id="nc-reset-initial" type="button" disabled>Сбросить</button>
+            </div>
+            <label class="nc-overlay-toggle"><input id="nc-previous-overlay" type="checkbox" checked /> Показать предыдущую геометрию</label>
+          </section>
+
+          <div id="nc-status" class="status nc-document-status" role="status" aria-live="polite">Выберите NC-файл, чтобы начать диагностику.</div>
+          <section id="nc-edit-inspector" class="nc-edit-inspector" aria-live="polite">Выберите одну или несколько строк NC-кода для редактирования.</section>
+        </aside>
+
+        <main class="nc-preview-pane" data-nc-pane-content="preview">
+          <div id="canvas-root"></div>
+          <aside id="nc-hover-inspector" class="nc-hover-inspector debug-only" aria-live="polite" hidden></aside>
+          <section class="nc-color-toolbar debug-only" aria-label="Настройки отображения">
+            <div class="nc-toolbar-label">Отображение</div>
+            <label class="field nc-color-strategy-field"><span>Стратегия</span><select id="nc-color-strategy"><option value="motion">Движение</option><option value="tool">Инструмент</option><option value="depth">Глубина</option><option value="feed">Подача</option></select></label>
+            <div class="color-grid" aria-label="Цвета движений">
+              <label class="field"><span>G0</span><input id="nc-color-g0" type="color" value="#7fb7ff" /></label>
+              <label class="field"><span>G1</span><input id="nc-color-g1" type="color" value="#42d36b" /></label>
+              <label class="field"><span>G2</span><input id="nc-color-g2" type="color" value="#ffad33" /></label>
+              <label class="field"><span>G3</span><input id="nc-color-g3" type="color" value="#d45cff" /></label>
+            </div>
+            <div id="nc-color-legend" class="nc-color-legend" aria-live="polite"></div>
+          </section>
+        </main>
+
+        <aside id="nc-source-panel" class="nc-source-panel" data-nc-pane-content="source" aria-label="NC source" hidden>
+          <div class="nc-source-panel-header">
+            <div class="nc-source-title-row"><div><span class="nc-panel-eyebrow">Документ</span><h2>NC Source</h2></div><button id="nc-source-focus" type="button" class="nc-source-focus" disabled>Focus</button></div>
+            <div id="nc-query-panel" class="nc-query-panel"></div>
           </div>
-          <div id="nc-color-legend" class="nc-color-legend" aria-live="polite"></div>
-        </section>
-      </main>
+          <div id="nc-source-list" class="nc-source-list" role="listbox" aria-label="NC source lines" tabindex="0"></div>
+        </aside>
+      </div>
     </div>
     <script type="module" src="./app.js"></script>
   </body>
