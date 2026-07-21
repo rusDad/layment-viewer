@@ -35,7 +35,7 @@ export function createNcScene(ctx) {
     const lineResult = replaceNcToolpathLines(settings);
 
     scene.add(ncPreviewGroup);
-    fitCamera(ncPreviewGroup);
+    //fitCamera(ncPreviewGroup);
     return { group: ncPreviewGroup, motionLineBatches: lineResult.lineBatches, colorLegend: lineResult.colorLegend };
   }
 
