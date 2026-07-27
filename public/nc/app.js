@@ -2,6 +2,8 @@ import { ViewerBase, disposeMaterial } from '../core/ViewerBase.js';
 import { createViewerScene } from '../core/SceneFactory.js';
 import { NcPreview } from './NcPreview.js';
 import { ViewerMode, isPreviewMode } from '../routing.js';
+import { NC_MAX_FILE_BYTES } from './nc-parser.mjs';
+import { parseNcQuery } from './NcQuery.mjs';
 
 const viewerMode = ViewerMode.DEBUG;
 const root = document.getElementById('canvas-root');
@@ -21,6 +23,7 @@ const ncPreviewController = new NcPreview({
   isPreviewMode,
   ncFileInput: document.getElementById('nc-file'),
   ncStatusEl: document.getElementById('nc-status'),
+  ncDocumentNameEl: document.getElementById('nc-document-name'),
   ncHoverInspectorEl: document.getElementById('nc-hover-inspector'),
   ncSourcePanelEl: document.getElementById('nc-source-panel'),
   ncSourceListEl: document.getElementById('nc-source-list'),
@@ -56,6 +59,7 @@ viewerBase.init();
 ncPreviewController.init();
 initResponsivePanes();
 updateDocumentName();
+openNcDocumentFromQuery();
 
 document.getElementById('nc-file')?.addEventListener('change', updateDocumentName);
 
@@ -81,6 +85,36 @@ function updateDocumentName() {
   const file = document.getElementById('nc-file')?.files?.[0];
   const nameEl = document.getElementById('nc-document-name');
   if (nameEl) nameEl.textContent = file ? file.name : 'Новый документ';
+}
+
+async function openNcDocumentFromQuery() {
+  const params = new URLSearchParams(window.location.search);
+  for (const [name, id] of [['width', 'nc-width'], ['height', 'nc-height'], ['thickness', 'nc-thickness']]) {
+    if (params.has(name)) document.getElementById(id).value = params.get(name);
+  }
+  const query = parseNcQuery(params, window.location.href);
+  if (query.mode === 'manual') return;
+  if (!query.ok) { ncPreviewController.setNcStatus(query.error, true); return; }
+
+  ncPreviewController.setNcStatus(`Загрузка ${query.filename}…`);
+  try {
+    const response = await fetch(query.url, { credentials: 'same-origin' });
+    if (!response.ok) throw new Error(`Не удалось загрузить NC: HTTP ${response.status}.`);
+    const contentLength = response.headers.get('Content-Length');
+    if (contentLength !== null && Number(contentLength) > NC_MAX_FILE_BYTES) throw fileTooLargeError();
+    const blob = await response.blob();
+    if (blob.size > NC_MAX_FILE_BYTES) throw fileTooLargeError();
+    const text = await blob.text();
+    if (new TextEncoder().encode(text).byteLength > NC_MAX_FILE_BYTES) throw fileTooLargeError();
+    await ncPreviewController.openNcDocument({ text, filename: query.filename, dimensions: query.dimensions });
+  } catch (err) {
+    ncPreviewController.clearNcPreview();
+    ncPreviewController.setNcStatus(err instanceof Error ? err.message : String(err), true);
+  }
+}
+
+function fileTooLargeError() {
+  return new Error(`Файл слишком большой: максимум ${Math.round(NC_MAX_FILE_BYTES / 1024 / 1024)} MB.`);
 }
 
 function initResponsivePanes() {
