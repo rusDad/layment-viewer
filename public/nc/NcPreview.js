@@ -19,6 +19,8 @@ export class NcPreview {
     this.ctx = ctx;
     this.preview = createNcPreview(ctx);
     this.buildNcPreviewFromUi = this.preview.buildNcPreviewFromUi;
+    this.openNcDocument = this.preview.openNcDocument;
+    this.setNcStatus = this.preview.setNcStatus;
     this.updateNcVisualSettings = this.preview.updateNcVisualSettings;
     this.updateNcOpacityLabel = this.preview.updateNcOpacityLabel;
     this.clearNcPreview = this.preview.clearNcPreview;
@@ -124,28 +126,27 @@ export function createNcPreview(ctx) {
       return;
     }
 
-    if (!text.trim()) {
-      ncUi.setNcStatus('NC файл пустой.', true);
-      return;
-    }
+    await openNcDocument({ text, filename: file.name, dimensions });
+  }
 
+  async function openNcDocument({ text, filename, dimensions }) {
+    if (typeof text !== 'string' || !text.trim()) {
+      ncUi.setNcStatus('NC файл пустой.', true);
+      return false;
+    }
     let toolpath;
+    let imported;
     try {
-      const imported = importNcToCanonicalDocument(text, { filename: file.name });
+      imported = importNcToCanonicalDocument(text, { filename });
       if (!imported.ok) {
         const details = imported.diagnostics.map((diagnostic) => `line ${diagnostic.source?.lineNumber ?? 'n/a'}: ${diagnostic.message}`).join('\n');
         ncUi.setNcStatus(`NC normalization failed:\n${details}`, true);
-        return;
+        return false;
       }
       toolpath = imported.toolpath;
-      activeDocument = imported.canonicalDocument;
-      activeCache = imported.executionCache;
-      initialCanonicalText = imported.canonicalText;
-      initialCanonicalDocument = imported.canonicalDocument;
-      activeFilename = file.name;
     } catch (err) {
       ncUi.setNcStatus(`Не удалось распарсить NC: ${err instanceof Error ? err.message : String(err)}`, true);
-      return;
+      return false;
     }
 
     if (toolpath.segments.length === 0) {
@@ -160,7 +161,7 @@ export function createNcPreview(ctx) {
       ncUi.clearEditInspector();
       ncUi.resetSelectionQuery(activeDocument?.revision ?? null);
       ncUi.setNcStatus(formatNcStatus(toolpath, 'Движения G0/G1/G2/G3 не найдены.'), true);
-      return;
+      return false;
     }
 
     ncPicking.clearPickableLineBatches();
@@ -171,6 +172,11 @@ export function createNcPreview(ctx) {
     translationPreview = null;
     selection.clearAll();
     activeToolpath = toolpath;
+    activeDocument = imported.canonicalDocument;
+    activeCache = imported.executionCache;
+    initialCanonicalText = imported.canonicalText;
+    initialCanonicalDocument = imported.canonicalDocument;
+    activeFilename = filename;
     activeDimensions = dimensions;
     activeLineId = null;
     ncUi.clearEditInspector();
@@ -183,6 +189,8 @@ export function createNcPreview(ctx) {
     ncPicking.setPickableLineBatches(previewResult.motionLineBatches);
     ncUi.renderColorLegend(previewResult.colorLegend);
     ncUi.setNcStatus(formatNcStatus(toolpath, 'Normalized canonical NC document opened.'));
+    if (ctx.ncDocumentNameEl) ctx.ncDocumentNameEl.textContent = filename;
+    return true;
   }
 
 
@@ -461,6 +469,8 @@ export function createNcPreview(ctx) {
   return {
     init: () => ncPicking.init(),
     buildNcPreviewFromUi,
+    openNcDocument,
+    setNcStatus: ncUi.setNcStatus,
     selectSegment,
     selectSourceLine,
     clearSelection,
