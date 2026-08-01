@@ -9,7 +9,7 @@ import { buildNcEditImpact } from './document/NcEditImpact.mjs';
 import { applySemanticTranslationCommand, buildSemanticTranslationPlan, buildTranslatedCandidateDocument, verifySemanticTranslationPlan } from './document/NcSemanticTranslation.mjs';
 import { createNcScene } from './NcScene.js';
 import { NcPickingController } from './NcPickingController.js';
-import { NcSelectionController, orderedSelection } from './NcSelectionController.js';
+import { NcSelectionController, emptySelection, orderedSelection } from './NcSelectionController.js';
 import { createNcUi, formatNcStatus } from './NcUi.js';
 import { evaluateNcSelectionQuery } from './NcSelectionQuery.mjs';
 
@@ -44,9 +44,13 @@ export class NcPreview {
   }
 }
 
-export function createNcPreview(ctx) {
+export function createNcPreview(ctx, {
+  createScene = createNcScene,
+  createUi = createNcUi,
+  createPicking = (options) => new NcPickingController(options)
+} = {}) {
   const { viewerMode, isPreviewMode, ncFileInput } = ctx;
-  const ncScene = createNcScene(ctx);
+  const ncScene = createScene(ctx);
   let activeToolpath = null;
   let activeDocument = null;
   let activeCache = null;
@@ -65,11 +69,11 @@ export function createNcPreview(ctx) {
       ncScene.setHoverHighlight(segmentId);
       ncUi.showHoverInspector(getActiveSegment(segmentId));
     },
-    onSelectionChange: (selectionState) => updateSelectionState(selectionState),
+    onSelectionChange: (selectionState) => updateSelectionState(normalizePreviewSelection(selectionState)),
     getDocumentLineIds: () => activeDocument?.lines?.map((line) => line.lineId) ?? [],
     getLineIdBySegmentId: (segmentId) => activeCache?.segmentIdToLineId?.get(segmentId) ?? null
   });
-  ncUi = createNcUi({
+  ncUi = createUi({
     ...ctx,
     onSourceLineSelect: (lineId, modifiers) => selection.selectLineId(lineId, modifiers, 'source'),
     onFocusSelectedSegment: () => focusSelectedSegment(),
@@ -90,7 +94,7 @@ export function createNcPreview(ctx) {
     onApplySelectionQuery: (query, mode, filterSource) => applySelectionQuery(query, mode, filterSource),
     getActiveDocumentRevision: () => activeDocument?.revision ?? null
   });
-  const ncPicking = new NcPickingController({
+  const ncPicking = createPicking({
     ...ctx,
     onHoverSegmentChange: (segmentId) => selection.setHoveredSegmentId(segmentId),
     onSelectSegmentChange: (segmentId, modifiers) => selection.selectSegment(segmentId, modifiers)
@@ -150,6 +154,7 @@ export function createNcPreview(ctx) {
     }
 
     if (toolpath.segments.length === 0) {
+      selection.clearAll();
       activeToolpath = null;
       activeDocument = null;
       activeCache = null;
@@ -170,7 +175,6 @@ export function createNcPreview(ctx) {
     ncScene.clearPreviousGeometryOverlay();
     ncScene.clearCandidateGeometryOverlay();
     translationPreview = null;
-    selection.clearAll();
     activeToolpath = toolpath;
     activeDocument = imported.canonicalDocument;
     activeCache = imported.executionCache;
@@ -179,6 +183,7 @@ export function createNcPreview(ctx) {
     activeFilename = filename;
     activeDimensions = dimensions;
     activeLineId = null;
+    selection.clearAll();
     ncUi.clearEditInspector();
     ncUi.resetSelectionQuery(activeDocument?.revision ?? null);
     ncUi.setSourceDocument(toolpath.lines);
@@ -524,3 +529,7 @@ export function createNcPreview(ctx) {
 }
 
 function isValidSegmentId(segmentId) { return Number.isInteger(segmentId) || (typeof segmentId === 'string' && segmentId.length > 0); }
+
+export function normalizePreviewSelection(selectionState) {
+  return selectionState && Array.isArray(selectionState.orderedLineIds) ? selectionState : emptySelection();
+}
