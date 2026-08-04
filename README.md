@@ -273,3 +273,17 @@ Viewer остаётся вспомогательным сервисом прое
 - становиться владельцем order semantics;
 - менять исходные STL или NC данные ради визуального удобства;
 - вводить скрытые unit conversion или геометрический scale.
+
+## Standalone Shared UI distribution
+
+NC Tools загружает зафиксированную Shared UI distribution из `public/ui/`. Эти assets входят в Viewer, поэтому обычные `npm install` и `npm run dev` не требуют запущенного Layment Designer, соседнего checkout или сетевого CSS runtime. Файлы `public/ui/*.css` — generated vendor artifacts; их канонический редактируемый источник находится в `rusDad/layment-designer/frontend/public/ui`.
+
+Для обновления из локального checkout Designer сначала переключите его на требуемый immutable commit, затем выполните:
+
+```bash
+npm run shared-ui:sync -- --source ../layment-designer
+npm run shared-ui:verify
+npm test
+```
+
+Sync записывает точные CSS bytes и детерминированный `public/ui/source.json` с source commit, SHA-256 и размером каждого файла. Не редактируйте bundled CSS вручную. Обновление меняет pinned commit вместе с bundle и provenance; rollback выполняется обычным revert или повторной синхронизацией предыдущего pinned commit.

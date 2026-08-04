@@ -75,6 +75,7 @@ export function createNcUi(ctx) {
 
     ncStatusEl.textContent = message || '';
     ncStatusEl.classList.toggle('status-error', Boolean(message) && isError);
+    ncStatusEl.classList.toggle('ui-status', Boolean(message));
     ncStatusEl.classList.toggle('status-meta', Boolean(message) && !isError);
   }
 
@@ -325,11 +326,12 @@ export function createNcUi(ctx) {
     form.className = 'nc-edit-field-grid';
     editReadModel.fields.forEach(({ field, value }) => {
       const label = document.createElement('label');
-      label.className = 'field';
+      label.className = 'field ui-field';
       const span = document.createElement('span');
       span.textContent = field;
       const input = document.createElement('input');
       input.type = 'number';
+      input.className = 'ui-input';
       input.step = 'any';
       input.value = Number.isFinite(value) ? String(value) : '';
       input.dataset.field = field;
@@ -556,12 +558,12 @@ export function createNcUi(ctx) {
   function renderTranslationControls(lineIds) {
     if (!ncEditInspectorEl) return;
     const ids = Array.isArray(lineIds) ? lineIds : [];
-    const section = document.createElement('section'); section.className = 'nc-query-card';
+    const section = document.createElement('section'); section.className = 'nc-query-card ui-card';
     const title = document.createElement('div'); title.className = 'nc-source-detail-title'; title.textContent = 'Semantic XY translation'; section.append(title);
-    const controls = document.createElement('div'); controls.className = 'nc-query-controls';
+    const controls = document.createElement('div'); controls.className = 'nc-query-controls ui-toolbar';
     controls.append(inputField('ΔX mm', translationDraft.dxText, (v)=>{ translationDraft.dxText = v; }), inputField('ΔY mm', translationDraft.dyText, (v)=>{ translationDraft.dyText = v; }));
     section.append(controls);
-    const actions = document.createElement('div'); actions.className = 'nc-edit-actions';
+    const actions = document.createElement('div'); actions.className = 'nc-edit-actions ui-toolbar';
     const previewButton = button('Preview translation', () => { lastTranslationPlan = onTranslationPreview?.(materializeTranslationDraft()); renderTranslationPlan(section); });
     const applyButton = button('Apply translation', () => onTranslationApply?.(materializeTranslationDraft()));
     applyButton.disabled = !(lastTranslationPlan?.applicable && lastTranslationPlan?.verification?.ok);
@@ -577,7 +579,7 @@ export function createNcUi(ctx) {
   function showTranslationPlan(plan) { lastTranslationPlan = plan; rerenderCurrentInspector(); }
   function renderTranslationPlan(section) {
     if (!lastTranslationPlan) return;
-    const p = document.createElement('p'); p.className = `status ${lastTranslationPlan.ok ? (lastTranslationPlan.applicable ? 'status-meta' : 'status-error') : 'status-error'}`;
+    const p = document.createElement('p'); p.className = `status ui-status ${lastTranslationPlan.ok ? (lastTranslationPlan.applicable ? 'status-meta' : 'status-error') : 'status-error'}`;
     p.textContent = lastTranslationPlan.ok
       ? `selected=${lastTranslationPlan.targetLineIds?.length ?? 0}, linear=${lastTranslationPlan.translatedLinearLineCount ?? 0}, arcs=${lastTranslationPlan.translatedArcLineCount ?? 0}, ignored=${lastTranslationPlan.ignoredLineCount ?? 0}, blockers=${lastTranslationPlan.blockerCount ?? 0}, arc-boundaries=${lastTranslationPlan.blockedArcBoundaries?.length ?? 0}, ranges=${lastTranslationPlan.rangeCount ?? 0}, ΔX=${lastTranslationPlan.dxMm}, ΔY=${lastTranslationPlan.dyMm}, earliest=${lastTranslationPlan.earliestAffectedLineIndex == null ? 'n/a' : lastTranslationPlan.earliestAffectedLineIndex + 1}, boundary connectors=${lastTranslationPlan.connectorChangeCount ?? 0}, arc verification=${lastTranslationPlan.verification?.ok ? 'ok' : 'failed'}, applicable=${lastTranslationPlan.applicable ? 'yes' : 'no'}`
       : `${lastTranslationPlan.error?.code}: ${lastTranslationPlan.error?.message}`;
@@ -599,9 +601,9 @@ export function createNcUi(ctx) {
   function renderBatchNumericControls(lineIds) {
     if (!ncEditInspectorEl) return;
     const ids = Array.isArray(lineIds) ? lineIds : [];
-    const section = document.createElement('section'); section.className = 'nc-query-card';
+    const section = document.createElement('section'); section.className = 'nc-query-card ui-card';
     const title = document.createElement('div'); title.className = 'nc-source-detail-title'; title.textContent = 'Batch numeric edit'; section.append(title);
-    const controls = document.createElement('div'); controls.className = 'nc-query-controls';
+    const controls = document.createElement('div'); controls.className = 'nc-query-controls ui-toolbar';
     controls.append(
       selectField('Field', batchDraft.targetField, [['feed','Feed (F)'], ['z','Z target']], (v)=>{ batchDraft.targetField = v; renderSelectionQueryPanel(); rerenderCurrentInspector(); }),
       selectField('Operation', batchDraft.type, [['set','Set'], ['add','Add'], ['multiply','Multiply'], ['clamp','Clamp']], (v)=>{ batchDraft.type = v; renderSelectionQueryPanel(); rerenderCurrentInspector(); })
@@ -609,7 +611,7 @@ export function createNcUi(ctx) {
     if (batchDraft.type === 'clamp') controls.append(inputField('min', batchDraft.minText, (v)=>{ batchDraft.minText = v; }), inputField('max', batchDraft.maxText, (v)=>{ batchDraft.maxText = v; }));
     else controls.append(inputField(batchDraft.type === 'multiply' ? 'factor' : 'value', batchDraft.valueText, (v)=>{ batchDraft.valueText = v; }));
     section.append(controls);
-    const actions = document.createElement('div'); actions.className = 'nc-edit-actions';
+    const actions = document.createElement('div'); actions.className = 'nc-edit-actions ui-toolbar';
     actions.append(button('Preview batch', () => { lastBatchPlan = onBatchNumericPreview?.(materializeBatchDraft()); renderBatchPlan(section); }), button('Apply batch', () => { onBatchNumericApply?.(materializeBatchDraft()); }));
     section.append(actions);
     const hint = document.createElement('p'); hint.className = 'section-hint'; hint.textContent = `Applies to ${ids.length} selected canonical line${ids.length === 1 ? '' : 's'} only; comments and opaque lines are skipped.`; section.append(hint);
@@ -622,7 +624,7 @@ export function createNcUi(ctx) {
   function rerenderCurrentInspector() { if (editReadModel?.line) renderEditInspector(); else if (lastSelectionEditArgs) renderMultiSelectionInspector(lastSelectionEditArgs.selectionState, lastSelectionEditArgs.canonicalDocument, lastSelectionEditArgs.cache, lastSelectionEditArgs.toolpath); }
   function renderBatchPlan(section) {
     if (!lastBatchPlan) return;
-    const p = document.createElement('p'); p.className = `status ${lastBatchPlan.ok ? 'status-meta' : 'status-error'}`;
+    const p = document.createElement('p'); p.className = `status ui-status ${lastBatchPlan.ok ? 'status-meta' : 'status-error'}`;
     p.textContent = lastBatchPlan.ok ? `${lastBatchPlan.summary}; earliest=${lastBatchPlan.earliestAffectedLineIndex == null ? 'n/a' : lastBatchPlan.earliestAffectedLineIndex + 1}` : `${lastBatchPlan.error?.code}: ${lastBatchPlan.error?.message}`;
     section.append(p);
     if (lastBatchPlan.ok && lastBatchPlan.changes?.length) {
@@ -672,7 +674,7 @@ export function createNcUi(ctx) {
     ncQueryPanelEl.innerHTML = '';
     if (sourceLines.length === 0) return;
     const wrap = document.createElement('details');
-    wrap.className = 'nc-query-card';
+    wrap.className = 'nc-query-card ui-card';
     wrap.open = isSelectionQueryOpen;
     wrap.addEventListener('toggle', () => { isSelectionQueryOpen = wrap.open; });
     const summary = document.createElement('summary');
@@ -681,7 +683,7 @@ export function createNcUi(ctx) {
     wrap.append(summary);
     const body = document.createElement('div');
     body.className = 'nc-query-body';
-    const controls = document.createElement('div'); controls.className = 'nc-query-controls';
+    const controls = document.createElement('div'); controls.className = 'nc-query-controls ui-toolbar';
     controls.append(selectField('Scope', queryDraft.scope, [['document','Whole document'], ['current-selection','Current selection']], (v)=>{ queryDraft.scope=v; }), selectField('Match', queryDraft.combination, [['all','All predicates'], ['any','Any predicate']], (v)=>{ queryDraft.combination=v; }), selectField('Apply', queryDraft.applyMode, [['replace','Replace selection'], ['add','Add to selection']], (v)=>{ queryDraft.applyMode=v; }));
     const filterToggle = document.createElement('label');
     const filterInput = document.createElement('input');
@@ -700,13 +702,13 @@ export function createNcUi(ctx) {
     const rows = document.createElement('div'); rows.className = 'nc-query-rows';
     queryDraft.predicates.forEach((predicate, index) => rows.append(renderPredicateRow(predicate, index)));
     body.append(rows);
-    const actions = document.createElement('div'); actions.className = 'nc-edit-actions';
+    const actions = document.createElement('div'); actions.className = 'nc-edit-actions ui-toolbar';
     const add = button('Add predicate', () => { queryDraft.predicates.push({ kind: 'motion', values: ['G0'] }); renderSelectionQueryPanel(); });
     const apply = button('Apply query', () => applySelectionQueryDraft());
     const clear = button('Clear query', () => resetSelectionQuery(getActiveDocumentRevision?.() ?? null));
     actions.append(add, apply, clear); body.append(actions);
     if (lastQueryResult) {
-      const status = document.createElement('p'); status.className = `status ${lastQueryResult.ok ? 'status-meta' : 'status-error'}`;
+      const status = document.createElement('p'); status.className = `status ui-status ${lastQueryResult.ok ? 'status-meta' : 'status-error'}`;
       status.textContent = lastQueryResult.ok ? `${lastQueryResult.matchedCount} matched, ${lastQueryResult.scannedCount} scanned${filterLineIds ? ` · NC Source filtered: ${displayedSourceLines.length}/${sourceLines.length} displayed` : ''} · ${lastQueryResult.summary.scope} · ${lastQueryResult.summary.combination} · ${lastQueryResult.summary.predicateCount} predicates${lastQueryResult.stale ? ' · stale: apply again after document edit' : ''}` : lastQueryResult.diagnostics.map((d)=>`${d.code}: ${d.message}`).join(' ');
       body.append(status);
     }
@@ -728,13 +730,13 @@ export function createNcUi(ctx) {
   function materializeQueryDraft() { return { scope: queryDraft.scope, combination: queryDraft.combination, predicates: queryDraft.predicates.map((p) => { const q = { kind: p.kind }; if (p.values) q.values = [...p.values]; if (p.operator) q.operator = p.operator; if (p.kind === 'z' || p.kind === 'feed') q.value = Number(p.valueText ?? p.value); if (p.kind === 'diagnostic') { if (p.severity) q.severity = p.severity; if (p.code) q.code = p.code; } if (p.kind === 'canonical-range' || p.kind === 'source-range') { q.from = Number(p.fromText ?? p.from); q.to = Number(p.toText ?? p.to); } return q; }) }; }
   function defaultQueryDraft() { return { scope: 'document', combination: 'all', applyMode: 'replace', filterSource: false, predicates: [{ kind: 'motion', values: ['G0'] }] }; }
   function defaultPredicate(kind) { if (kind === 'motion') return { kind, values: ['G0'] }; if (kind === 'line-kind') return { kind, values: ['motion'] }; if (kind === 'z' || kind === 'feed') return { kind, operator: '<', valueText: '0' }; if (kind === 'diagnostic') return { kind }; return { kind, fromText: '1', toText: '1' }; }
-  function selectField(labelText, value, options, onChange) { const label = document.createElement('label'); label.className = 'field'; if (labelText) { const span = document.createElement('span'); span.textContent = labelText; label.append(span); } const select = document.createElement('select'); options.forEach(([v,t])=>{ const o=document.createElement('option'); o.value=v; o.textContent=t; o.selected=v===value; select.append(o); }); select.addEventListener('change',()=>onChange(select.value)); label.append(select); return label; }
-  function inputField(placeholder, value, onInput) { const input = document.createElement('input'); input.type = 'text'; input.placeholder = placeholder; input.value = value ?? ''; input.addEventListener('input',()=>onInput(input.value)); input.addEventListener('keydown',(e)=>{ if(e.key==='Enter'){ e.preventDefault(); applySelectionQueryDraft(); }}); return input; }
+  function selectField(labelText, value, options, onChange) { const label = document.createElement('label'); label.className = 'field ui-field'; if (labelText) { const span = document.createElement('span'); span.textContent = labelText; label.append(span); } const select = document.createElement('select'); select.className = 'ui-select'; options.forEach(([v,t])=>{ const o=document.createElement('option'); o.value=v; o.textContent=t; o.selected=v===value; select.append(o); }); select.addEventListener('change',()=>onChange(select.value)); label.append(select); return label; }
+  function inputField(placeholder, value, onInput) { const input = document.createElement('input'); input.type = 'text'; input.className = 'ui-input'; input.placeholder = placeholder; input.value = value ?? ''; input.addEventListener('input',()=>onInput(input.value)); input.addEventListener('keydown',(e)=>{ if(e.key==='Enter'){ e.preventDefault(); applySelectionQueryDraft(); }}); return input; }
   function applySelectionQueryDraft() { onApplySelectionQuery?.(materializeQueryDraft(), queryDraft.applyMode, queryDraft.filterSource); }
   function disableSourceFilter() { filterLineIds = null; displayedSourceLines = sourceLines; }
   function checkboxes(values, selected, onChange) { const box = document.createElement('div'); box.className='nc-query-checks'; values.forEach((v)=>{ const label=document.createElement('label'); const input=document.createElement('input'); input.type='checkbox'; input.checked=(selected??[]).includes(v); input.addEventListener('change',()=>{ const set=new Set(predicateSafeValues(selected)); input.checked?set.add(v):set.delete(v); selected.splice?.(0, selected.length, ...set); onChange([...set]); }); label.append(input, document.createTextNode(v)); box.append(label); }); return box; }
   function predicateSafeValues(values) { return Array.isArray(values) ? values : []; }
-  function button(text, onClick) { const b=document.createElement('button'); b.type='button'; b.textContent=text; b.addEventListener('click', onClick); return b; }
+  function button(text, onClick) { const b=document.createElement('button'); b.type='button'; b.className='ui-button ui-button--secondary'; b.textContent=text; b.addEventListener('click', onClick); return b; }
 
   function handleWorkspaceKeyDown(event) {
 
