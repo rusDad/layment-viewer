@@ -233,3 +233,10 @@ Do not:
 - perform broad architectural rewrites as part of a rendering fix.
 
 When a change exposes a wider architectural problem, document it and separate it into a dedicated PR.
+
+## Shared UI distribution
+
+- `public/ui/*.css` are generated vendor artifacts and must not be edited manually.
+- NC-specific corrections belong in Viewer-local CSS, scoped through `.nc-app`.
+- Update Shared UI only through deterministic sync, provenance verification, and tests.
+- Viewer startup and browser runtime must remain self-contained; a runtime dependency on the Layment Designer service or checkout is forbidden.

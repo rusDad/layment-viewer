@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "sourceRepository": "rusDad/layment-designer",
+  "sourceCommit": "d713ef886ee6abf24307dff2635751fa536a9c0a",
+  "sourceDirectory": "frontend/public/ui",
+  "files": {
+    "tokens.css": {
+      "sha256": "sha256:a7af914f7b59e20c49dfdf7cd70661fbd44f450056c716c5116b8e4a77d58cfd",
+      "bytes": 610
+    },
+    "foundation.css": {
+      "sha256": "sha256:7f1903cc91060dc1fb0f6d14b4aa2b62d2440cf11b1731c084c97c2adeccc809",
+      "bytes": 276
+    },
+    "components.css": {
+      "sha256": "sha256:abc0dd7996188d186d7adc364c89a6674c1a20bd2d075fce2a5f535bc3bb89fe",
+      "bytes": 1846
+    }
+  }
+}

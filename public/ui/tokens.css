@@ -1,0 +1,21 @@
+:root {
+  --ui-color-bg: #07121c;
+  --ui-color-surface: #0c1a25;
+  --ui-color-surface-raised: #0f202c;
+  --ui-color-surface-control: #10222e;
+  --ui-color-text: #f3f5f4;
+  --ui-color-text-muted: #afbac2;
+  --ui-color-border: rgba(184, 212, 221, 0.18);
+  --ui-color-primary: #2bc58d;
+  --ui-color-primary-hover: #48d9a1;
+  --ui-color-danger: #ff6b6b;
+  --ui-color-danger-surface: rgba(255, 107, 107, 0.12);
+  --ui-radius-sm: 6px;
+  --ui-radius-md: 8px;
+  --ui-radius-lg: 10px;
+  --ui-space-1: 4px;
+  --ui-space-2: 8px;
+  --ui-space-3: 12px;
+  --ui-space-4: 16px;
+  --ui-font-family: Inter, Arial, sans-serif;
+}
