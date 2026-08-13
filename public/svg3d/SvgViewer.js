@@ -420,6 +420,8 @@ function createTextOverlayMesh(textItem, outerWidthMm, outerHeightMm) {
       yMm,
       widthMm: texturePayload.widthMm,
       heightMm: texturePayload.heightMm,
+      baselineXFromLeftMm: texturePayload.baselineXFromLeftMm,
+      baselineYFromTopMm: texturePayload.baselineYFromTopMm,
       angleDeg,
       outerHeightMm
     });
@@ -489,12 +491,21 @@ function createTextCanvasTexture(text, fontSizeMm, kind = '') {
 
   const widthMm = canvasWidthPx / pixelsPerMm;
   const heightMm = canvasHeightPx / pixelsPerMm;
-  if (!Number.isFinite(widthMm) || !Number.isFinite(heightMm) || widthMm <= 0 || heightMm <= 0) {
+  const baselineXFromLeftMm = paddingPx / pixelsPerMm;
+  const baselineYFromTopMm = (paddingPx + ascentPx) / pixelsPerMm;
+  if (
+    !Number.isFinite(widthMm)
+    || !Number.isFinite(heightMm)
+    || !Number.isFinite(baselineXFromLeftMm)
+    || !Number.isFinite(baselineYFromTopMm)
+    || widthMm <= 0
+    || heightMm <= 0
+  ) {
     texture.dispose();
     return null;
   }
 
-  return { texture, widthMm, heightMm };
+  return { texture, widthMm, heightMm, baselineXFromLeftMm, baselineYFromTopMm };
 }
 
 
