@@ -3,6 +3,8 @@ export function resolveTextOverlayTransform({
   yMm,
   widthMm,
   heightMm,
+  baselineXFromLeftMm,
+  baselineYFromTopMm,
   angleDeg,
   outerHeightMm
 }) {
@@ -12,10 +14,12 @@ export function resolveTextOverlayTransform({
   const cos = Math.cos(angleRad);
   const sin = Math.sin(angleRad);
 
-  // Editor text coordinates use the transformed top-left anchor (Fabric aCoords.tl).
-  // PlaneGeometry is centered, so rotate the top-left-to-center vector before placement.
-  const centerOffsetX = halfWidthMm * cos - halfHeightMm * sin;
-  const centerOffsetY = halfWidthMm * sin + halfHeightMm * cos;
+  // Preview payload text coordinates are the left-baseline insertion point.
+  // PlaneGeometry is centered, so rotate the baseline-to-center vector before placement.
+  const centerFromBaselineX = halfWidthMm - baselineXFromLeftMm;
+  const centerFromBaselineY = halfHeightMm - baselineYFromTopMm;
+  const centerOffsetX = centerFromBaselineX * cos - centerFromBaselineY * sin;
+  const centerOffsetY = centerFromBaselineX * sin + centerFromBaselineY * cos;
 
   return {
     x: xMm + centerOffsetX,
