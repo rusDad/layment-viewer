@@ -1,6 +1,7 @@
 import { ViewerBase, disposeMaterial } from './core/ViewerBase.js';
 import { createViewerScene } from './core/SceneFactory.js';
 import { SvgViewer } from './svg3d/SvgViewer.js';
+import { PreviewSceneViewer } from './svg3d/PreviewSceneViewer.js';
 import { StlViewer } from './stl/StlViewer.js';
 import { ViewerRoute, buildStlPreviewUrlFromUploadId, getViewerMode, getViewerRoute, isPreviewMode, parseViewerQuery } from './routing.js';
 
@@ -33,13 +34,15 @@ const sharedContext = {
   buildPreviewUrl,
   uploadButton,
   payloadKey: query.payloadKey,
+  allowLegacyPayload: query.debug && Boolean(query.payloadKey),
   stlId: query.stl,
   disposeMaterial,
   fitCamera: viewerBase.fitCamera,
   clearNcPreview: () => {}
 };
 
-const svgViewer = viewerRoute === ViewerRoute.STL_PREVIEW ? null : new SvgViewer({
+const isScenePreview = viewerRoute === ViewerRoute.SVG_PREVIEW && !query.debug;
+const svgViewer = viewerRoute === ViewerRoute.STL_PREVIEW || isScenePreview ? null : new SvgViewer({
   ...sharedContext,
   clearCurrentModel
 });
@@ -47,7 +50,8 @@ const stlViewer = viewerRoute === ViewerRoute.STL_PREVIEW ? new StlViewer({
   ...sharedContext,
   clearCurrentModel
 }) : null;
-const activeViewer = stlViewer || svgViewer;
+const previewSceneViewer = isScenePreview ? new PreviewSceneViewer({ ...sharedContext, clearCurrentModel }) : null;
+const activeViewer = stlViewer || previewSceneViewer || svgViewer;
 
 viewerBase.init();
 activeViewer?.init();

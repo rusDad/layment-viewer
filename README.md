@@ -100,15 +100,21 @@ http://localhost:3000/?debug=1
 - диагностическая информация;
 - axes helper и debug-style сцена.
 
-### Preview mode: SVG payload
+### Preview mode: PreviewSceneV1
 
 ```text
 http://localhost:3000/?payloadKey=<localStorage-key>
 ```
 
-Viewer читает payload из `localStorage`, строит SVG preview и затем удаляет использованный ключ.
+Viewer читает строгий geometry-based `PreviewSceneV1` из `localStorage`, строит независимые по глубине карманы и затем удаляет использованный ключ. Геометрия задаётся в миллиметрах в системе `origin-bottom-left`; SVG в product preview не используется. Полный DTO описан в `docs/preview_scene_v1.md`.
 
-Поддерживается raw SVG string или JSON payload. Основные поля:
+Legacy SVG payload можно открыть только явно в debug-режиме:
+
+```text
+http://localhost:3000/?debug=1&payloadKey=<localStorage-key>
+```
+
+Legacy JSON payload имеет основные поля:
 
 ```json
 {

@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "units": "mm",
+  "coordinateSystem": "origin-bottom-left",
+  "layment": {
+    "width": 120,
+    "height": 80,
+    "thicknessMm": 35,
+    "baseMaterialColor": "green"
+  },
+  "pockets": {
+    "contours": [],
+    "rects": [],
+    "circles": []
+  },
+  "texts": [
+    {
+      "text": "A-1",
+      "x": 20,
+      "y": 30,
+      "angle": 330,
+      "fontSizeMm": 7
+    }
+  ]
+}

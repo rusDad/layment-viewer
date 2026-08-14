@@ -54,7 +54,8 @@ raw source
 | URL | Entry point | Роль |
 |---|---|---|
 | `/` или `/svg3d/` | `public/index.html` → `public/app.js` | SVG debug tool или preview |
-| `/?payloadKey=<key>` | `public/app.js` → `SvgViewer.js` | одноразовый preview из `localStorage` |
+| `/?payloadKey=<key>` | `public/app.js` → `PreviewSceneViewer.js` | канонический одноразовый `PreviewSceneV1` из `localStorage` |
+| `/?debug=1&payloadKey=<key>` | `public/app.js` → `SvgViewer.js` | явный legacy SVG payload для диагностики |
 | `/?stl=<id>` | `public/app.js` → `StlViewer.js` | preview сохранённого STL |
 | `/?debug=1` | `public/app.js` | принудительный debug mode |
 | `/stl/` | `public/stl/index.html` → `public/stl/app.js` | загрузка STL и получение ссылки |
