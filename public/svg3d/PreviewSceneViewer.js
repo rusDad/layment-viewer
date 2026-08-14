@@ -38,6 +38,8 @@ export class PreviewSceneViewer {
         const geometry = geometries.length === 1 ? geometries[0] : mergeGeometries(geometries);
         geometry.computeVertexNormals();
         const mesh = new THREE.Mesh(geometry, visualLayer.topDepthMm < TOP_SKIN_THICKNESS_MM ? topMaterial : baseMaterial);
+        mesh.scale.z = -1;
+        mesh.position.z = -visualLayer.topDepthMm;
         mesh.castShadow = mesh.receiveShadow = true;
         group.add(mesh);
       });
@@ -66,8 +68,8 @@ function polygonToGeometries(polygon, layer) {
   const shape = path(polygon[0], true);
   polygon.slice(1).forEach((ring) => shape.holes.push(path(ring, false)));
   const geometry = new THREE.ExtrudeGeometry(shape, { depth: layer.bottomDepthMm - layer.topDepthMm, bevelEnabled: false, curveSegments: 16 });
-  geometry.rotateX(Math.PI);
-  geometry.translate(0, 0, -layer.topDepthMm);
+  //geometry.rotateX(Math.PI);
+  //geometry.translate(0, 0, -layer.topDepthMm);
   return [geometry];
 }
 function path(ring, shape) { const target = shape ? new THREE.Shape() : new THREE.Path(); ring.slice(0, -1).forEach((p, i) => i ? target.lineTo(p[0], p[1]) : target.moveTo(p[0], p[1])); target.closePath(); return target; }
