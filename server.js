@@ -27,7 +27,7 @@ const UNION_INPUT_SNAP_STEP = 1e-4;
 const UNION_DEBUG = process.env.UNION_DEBUG === '1';
 
 app.use('/svg3d', express.static('public'));
-app.use('/node_modules/polygon-clipping/dist', express.static(path.join(__dirname, 'node_modules/polygon-clipping/dist')));
+app.use('/svg3d/vendor/polygon-clipping', express.static(path.join(__dirname, 'node_modules/polygon-clipping/dist')));
 app.use(express.static('public'));
 
 app.post('/svg3d-api/upload-svg', svgUpload.single('file'), (req, res) => {
