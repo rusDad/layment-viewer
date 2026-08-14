@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "units": "mm",
+  "coordinateSystem": "origin-bottom-left",
+  "layment": {
+    "width": 120,
+    "height": 80,
+    "thicknessMm": 35,
+    "baseMaterialColor": "green"
+  },
+  "pockets": {
+    "contours": [
+      {
+        "ring": [
+          [
+            10,
+            15
+          ],
+          [
+            65,
+            15
+          ],
+          [
+            65,
+            55
+          ],
+          [
+            10,
+            55
+          ]
+        ],
+        "depthMm": 10
+      },
+      {
+        "ring": [
+          [
+            45,
+            25
+          ],
+          [
+            100,
+            25
+          ],
+          [
+            100,
+            65
+          ],
+          [
+            45,
+            65
+          ]
+        ],
+        "depthMm": 25
+      }
+    ],
+    "rects": [],
+    "circles": []
+  },
+  "texts": []
+}

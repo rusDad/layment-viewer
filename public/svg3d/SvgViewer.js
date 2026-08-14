@@ -16,7 +16,7 @@ export class SvgViewer {
   init() {
     this.ctx.uploadButton?.addEventListener('click', this.uploadSvg);
 
-    if (this.ctx.isPreviewMode(this.ctx.viewerMode) && this.ctx.payloadKey) {
+    if ((this.ctx.isPreviewMode(this.ctx.viewerMode) || this.ctx.allowLegacyPayload) && this.ctx.payloadKey) {
       this.initAutoloadFromPayloadKey(this.ctx.payloadKey);
     }
   }
