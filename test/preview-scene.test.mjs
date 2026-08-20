@@ -2,9 +2,30 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { buildPreviewSceneLayers, parsePreviewSceneV1 } from '../public/svg3d/PreviewSceneModel.mjs';
+import { resolvePreviewTextTransform } from '../public/svg3d/PreviewTextTransform.js';
 const require = createRequire(import.meta.url);
 const clipping = require('polygon-clipping');
 const load = (name) => parsePreviewSceneV1(JSON.parse(fs.readFileSync(new URL(`../fixtures/preview-scene/${name}.json`, import.meta.url))));
+const EPSILON = 1e-9;
+
+function assertClose(actual, expected, message) {
+  assert.ok(Math.abs(actual - expected) <= EPSILON, `${message}: expected ${expected}, got ${actual}`);
+}
+
+function assertTextBaselinePreserved(input) {
+  const transform = resolvePreviewTextTransform(input);
+  const halfWidthMm = input.widthMm / 2;
+  const halfHeightMm = input.heightMm / 2;
+  const localBaselineX = input.baselineXFromLeftMm - halfWidthMm;
+  const localBaselineY = halfHeightMm - input.baselineYFromTopMm;
+  const cos = Math.cos(transform.rotationZRad);
+  const sin = Math.sin(transform.rotationZRad);
+  const worldBaselineX = transform.x + localBaselineX * cos - localBaselineY * sin;
+  const worldBaselineY = transform.y + localBaselineX * sin + localBaselineY * cos;
+
+  assertClose(worldBaselineX, input.xMm, 'preview text X baseline anchor');
+  assertClose(worldBaselineY, input.yMm, 'preview text Y baseline anchor');
+}
 
 assert.throws(() => parsePreviewSceneV1({ version: 2 }), /version|unknown|required/);
 const malformed = JSON.parse(fs.readFileSync(new URL('../fixtures/preview-scene/one-contour.json', import.meta.url)));
@@ -44,4 +65,17 @@ const rotated = load('rotated-asymmetric');
 assert.deepEqual(rotated.pockets.contours[0].ring, [[25,10],[91,29],[77,67],[56,47],[18,54]], 'ring orientation is preserved');
 const text = load('bottom-left-text').texts[0];
 assert.deepEqual([text.x, text.y, text.angle], [20, 30, 330]);
-console.log('OK: PreviewSceneV1 parser and multi-depth topology regression passed.');
+
+const textTransformInput = {
+  xMm: text.x,
+  yMm: text.y,
+  widthMm: 20,
+  heightMm: 10,
+  baselineXFromLeftMm: 1.2,
+  baselineYFromTopMm: 8
+};
+[0, 45, 90, 180, 330].forEach((angleDeg) => {
+  assertTextBaselinePreserved({ ...textTransformInput, angleDeg });
+});
+
+console.log('OK: PreviewSceneV1 parser, topology and text baseline regression passed.');

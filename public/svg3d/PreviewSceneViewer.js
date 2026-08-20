@@ -1,10 +1,14 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { buildPreviewSceneLayers, parsePreviewSceneV1 } from './PreviewSceneModel.mjs';
+import { resolvePreviewTextTransform } from './PreviewTextTransform.js';
 
 const TOP_COLOR = 0x4a4a4a;
 const BASE_COLORS = { green: 0x6ea978, blue: 0x5f7892 };
 const TOP_SKIN_THICKNESS_MM = 4;
+const TEXT_OVERLAY_Z_OFFSET_MM = 0.5;
+const TEXT_CANVAS_PIXELS_PER_MM = 24;
+const TEXT_CANVAS_PADDING_PX = 8;
 
 export class PreviewSceneViewer {
   constructor(ctx) { this.ctx = ctx; }
@@ -74,4 +78,60 @@ function polygonToGeometries(polygon, layer) {
 }
 function path(ring, shape) { const target = shape ? new THREE.Shape() : new THREE.Path(); ring.slice(0, -1).forEach((p, i) => i ? target.lineTo(p[0], p[1]) : target.moveTo(p[0], p[1])); target.closePath(); return target; }
 function material(color) { return new THREE.MeshStandardMaterial({ color, metalness: 0.012, roughness: 0.82 }); }
-function buildTexts(texts) { const group = new THREE.Group(); texts.forEach((text) => { const canvas = document.createElement('canvas'); const px = Math.max(12, Math.ceil(text.fontSizeMm * 24)); const ctx = canvas.getContext('2d'); ctx.font = `500 ${px}px Arial`; const width = Math.ceil(ctx.measureText(text.text).width + 16); canvas.width = width; canvas.height = Math.ceil(px * 1.4); ctx.font = `500 ${px}px Arial`; ctx.fillStyle = '#101010'; ctx.textBaseline = 'middle'; ctx.fillText(text.text, 8, canvas.height / 2); const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace; const w = width / 24, h = canvas.height / 24; const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, toneMapped: false })); mesh.position.set(text.x + w / 2, text.y + h / 2, 0.5); mesh.rotation.z = THREE.MathUtils.degToRad(text.angle); group.add(mesh); }); return group.children.length ? group : null; }
+
+function buildTexts(texts) {
+  const group = new THREE.Group();
+  texts.forEach((text) => {
+    const canvas = document.createElement('canvas');
+    const fontPx = Math.max(12, Math.ceil(text.fontSizeMm * TEXT_CANVAS_PIXELS_PER_MM));
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const font = `500 ${fontPx}px Arial`;
+    ctx.font = font;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    const metrics = ctx.measureText(text.text);
+    const ascentPx = metrics.actualBoundingBoxAscent || fontPx * 0.8;
+    const descentPx = metrics.actualBoundingBoxDescent || fontPx * 0.22;
+    const widthPx = Math.ceil(metrics.width + TEXT_CANVAS_PADDING_PX * 2);
+    const heightPx = Math.ceil(ascentPx + descentPx + TEXT_CANVAS_PADDING_PX * 2);
+
+    canvas.width = widthPx;
+    canvas.height = heightPx;
+    ctx.font = font;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = '#101010';
+    ctx.fillText(text.text, TEXT_CANVAS_PADDING_PX, TEXT_CANVAS_PADDING_PX + ascentPx);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.generateMipmaps = false;
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+
+    const widthMm = widthPx / TEXT_CANVAS_PIXELS_PER_MM;
+    const heightMm = heightPx / TEXT_CANVAS_PIXELS_PER_MM;
+    const baselineXFromLeftMm = TEXT_CANVAS_PADDING_PX / TEXT_CANVAS_PIXELS_PER_MM;
+    const baselineYFromTopMm = (TEXT_CANVAS_PADDING_PX + ascentPx) / TEXT_CANVAS_PIXELS_PER_MM;
+    const transform = resolvePreviewTextTransform({
+      xMm: text.x,
+      yMm: text.y,
+      widthMm,
+      heightMm,
+      baselineXFromLeftMm,
+      baselineYFromTopMm,
+      angleDeg: text.angle
+    });
+
+    const mesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(widthMm, heightMm),
+      new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, toneMapped: false })
+    );
+    mesh.position.set(transform.x, transform.y, TEXT_OVERLAY_Z_OFFSET_MM);
+    mesh.rotation.z = transform.rotationZRad;
+    group.add(mesh);
+  });
+  return group.children.length ? group : null;
+}
