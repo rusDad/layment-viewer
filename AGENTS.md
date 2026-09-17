@@ -4,9 +4,10 @@
 
 This repository contains an auxiliary 3D preview and diagnostics service for Layment Designer.
 
-It supports three separate workflows:
+It supports four separate workflows:
 
-- SVG layout → generated 3D layment preview;
+- `PreviewSceneV1` → canonical product 3D layment preview;
+- SVG layout → generated 3D preview for explicit debug/legacy diagnostics;
 - uploaded STL → persistent preview by generated id;
 - local NC file → debug visualization of G0/G1/G2/G3 over a layment bounding box.
 
@@ -18,7 +19,7 @@ Keep these concerns separate:
 
 ```text
 Parsing
-  SVG / STL / NC input interpretation
+  PreviewSceneV1 / SVG / STL / NC input interpretation
 
 Model building
   normalized geometry, regions, toolpath segments, material classification
@@ -32,7 +33,7 @@ Transport/storage
 
 Do not continue growing `public/app.js` or `server.js` as undifferentiated orchestration modules.
 
-New work should move toward small modules with explicit data boundaries. Do not introduce a generic abstraction that hides the materially different SVG, STL and NC semantics.
+New work should move toward small modules with explicit data boundaries. Do not introduce a generic abstraction that hides the materially different PreviewScene, SVG, STL and NC semantics.
 
 ## Units and coordinate systems
 
@@ -40,7 +41,7 @@ New work should move toward small modules with explicit data boundaries. Do not 
 - Do not introduce hidden scale factors or implicit unit conversion.
 - Viewport/camera zoom is visual only and must not modify model coordinates.
 - Every source-to-Three.js coordinate transform must be explicit and centralized.
-- Do not “fix” orientation by mutating source SVG, STL or NC data in-place.
+- Do not “fix” orientation by mutating source PreviewScene, SVG, STL or NC data in-place.
 
 ### NC render mapping
 
@@ -70,7 +71,7 @@ Any change to this mapping requires:
 
 ## SVG pipeline invariants
 
-The SVG pipeline currently performs product-specific geometry processing, not just generic SVG rendering.
+The SVG pipeline performs product-specific geometry processing for explicit debug/legacy rendering, not for the canonical product PreviewScene path.
 
 Preserve these behaviours unless the task explicitly changes them:
 
@@ -141,17 +142,18 @@ Any change to modal handling, arcs, units, absolute/incremental positioning or c
 The mode contract is:
 
 ```text
-No payload query         -> debug mode
-?debug=1                 -> forced debug mode
-?payloadKey=<key>        -> customer-facing SVG preview
-?stl=<id>                -> customer-facing STL preview
+No payload query                 -> debug mode / SVG tool
+?debug=1                         -> forced debug mode
+?payloadKey=<key>                -> customer-facing PreviewSceneV1 preview
+?debug=1&payloadKey=<key>        -> explicit legacy SVG payload diagnostics
+?stl=<id>                        -> customer-facing STL preview
 ```
 
 Preview mode hides debug controls and uses preview lighting, shadows and presentation UI.
 
 Do not let debug-only controls or diagnostic text leak into customer-facing preview mode.
 
-`payloadKey` integration currently uses same-origin `localStorage` and removes the payload after consumption. Changing this is an integration-contract change and must be documented.
+`payloadKey` integration currently uses same-origin `localStorage` and removes the payload after consumption. In the normal product path the stored value is strict `PreviewSceneV1`; legacy SVG payload aliases are accepted only through the explicit debug path. Changing this handoff is an integration-contract change and must be documented.
 
 ## API contracts
 
@@ -164,6 +166,8 @@ GET  /svg3d-api/stl/:id
 ```
 
 Uploads use `multipart/form-data` with field name `file`.
+
+The canonical `PreviewSceneV1` product preview is browser-side and must not be routed through `/svg3d-api/upload-svg`.
 
 Do not change route paths, response shapes or file limits as an incidental refactor.
 
@@ -178,7 +182,8 @@ Do not change route paths, response shapes or file limits as an incidental refac
 
 After an update, manually verify:
 
-- SVG preview;
+- PreviewScene product preview;
+- SVG debug preview;
 - STL preview;
 - NC preview;
 - initial `fitCamera`;
@@ -211,11 +216,12 @@ npm test
 
 At minimum keep regression coverage for:
 
+- PreviewScene parser, multi-depth topology and orientation;
 - overlapping SVG pocket union;
 - top regions and nested islands;
 - NC parser cases.
 
-For renderer/UI changes, also perform manual browser smoke checks for all three workflows.
+For renderer/UI changes, also perform manual browser smoke checks for all affected workflows.
 
 Opening files through `file://` is not a valid integration test. Use the running HTTP server.
 
@@ -228,7 +234,7 @@ Do not:
 - move manufacturing policy into viewer code;
 - couple the viewer directly to editor internals;
 - invent a second canonical geometry model for the main product;
-- combine SVG, STL and NC pipelines into one opaque “universal loader”;
+- combine PreviewScene, SVG, STL and NC pipelines into one opaque “universal loader”;
 - add framework or build-system complexity without a concrete need;
 - perform broad architectural rewrites as part of a rendering fix.
 
