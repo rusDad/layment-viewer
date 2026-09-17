@@ -1577,9 +1577,12 @@ The implemented profile is intentionally narrow and project-specific:
 The downloadable machine candidate is a separate output boundary. The working
 canonical arc remains center-based and its internal deterministic serializer
 continues to emit `I`/`J`; machine export derives signed `R` directly from that
-semantic start/end/center/direction geometry. Arcs longer than 180° use negative
-`R`, while full circles fail closed because this controller profile cannot
-represent them unambiguously with a single `R` block.
+semantic start/end/center/direction geometry. The arc start is the effective
+position produced by sequentially traversing the current document, so edits or
+deletions of preceding motions cannot leave machine output using a stale stored
+start. Arcs longer than 180° use negative `R`, while full circles fail closed
+because this controller profile cannot represent them unambiguously with a
+single `R` block.
 
 ### Normalized, preserved and rejected constructs
 

@@ -19,15 +19,22 @@ export class MachineNcSerializationError extends Error {
 }
 
 export function serializeMachineNcDocument(document) {
-  return `${document.lines.map((line, index) => serializeMachineNcLine(line, index)).join('\n')}\n`;
+  let currentPosition = { x: 0, y: 0, z: 0 };
+  const serializedLines = document.lines.map((line, canonicalIndex) => {
+    const text = serializeMachineNcLine(line, { effectiveStart: currentPosition, canonicalIndex });
+    if (line?.kind === 'motion') currentPosition = line.end;
+    return text;
+  });
+  return `${serializedLines.join('\n')}\n`;
 }
 
-export function serializeMachineNcLine(line, canonicalIndex = -1) {
+export function serializeMachineNcLine(line, { effectiveStart = null, canonicalIndex = -1 } = {}) {
   if (line?.kind !== 'motion' || !ARC_MOTIONS.has(line.motion)) {
     return serializeCanonicalLine(line);
   }
 
-  const { start, end } = line;
+  const start = effectiveStart;
+  const { end } = line;
   const center = line.arc?.center;
   if (![start?.x, start?.y, end?.x, end?.y, end?.z, center?.x, center?.y, line.feed].every(Number.isFinite)) {
     throw machineError('invalid-machine-arc', 'Machine R export requires finite arc geometry and motion values.', line, canonicalIndex);

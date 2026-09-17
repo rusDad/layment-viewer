@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { importNcToCanonicalDocument } from '../public/nc/import/canonical-normalizer.mjs';
 import { serializeCanonicalNcDocument } from '../public/nc/document/CanonicalNcDocument.mjs';
-import { applyUpdateCanonicalNumericFieldCommand } from '../public/nc/document/CanonicalNcEditor.mjs';
+import { applyUpdateCanonicalNumericFieldCommand, deleteCanonicalLinesCommand } from '../public/nc/document/CanonicalNcEditor.mjs';
 import { applySemanticTranslationCommand, buildSemanticTranslationPlan } from '../public/nc/document/NcSemanticTranslation.mjs';
+import { executeCanonicalDocument } from '../public/nc/execution/NcCanonicalExecution.mjs';
 import { serializeMachineNcDocument, serializeMachineNcLine, MachineNcSerializationError } from '../public/nc/output/MachineNcSerializer.mjs';
 
 function mustImport(text) {
@@ -60,6 +61,32 @@ const editable = mustImport('G0 X0 Y0 Z0\nG2 X2 Y0 I1 J0 F100\n');
 const edited = applyUpdateCanonicalNumericFieldCommand({ document: editable.canonicalDocument, previousCache: editable.executionCache, initialCanonicalText: editable.canonicalText, lineId: editable.canonicalDocument.lines[1].lineId, field: 'arcCenterY', value: 1 });
 assert.equal(edited.ok, true);
 assert.match(serializeMachineNcDocument(edited.document), /G2 X2 Y0 Z0 R-1\.414214 F100/);
+
+const staleAfterEdit = mustImport('G1 X1 Y0 Z0 F100\nG3 X0 Y1 I-1 J0 F100\n');
+const movedStart = applyUpdateCanonicalNumericFieldCommand({ document: staleAfterEdit.canonicalDocument, previousCache: staleAfterEdit.executionCache, initialCanonicalText: staleAfterEdit.canonicalText, lineId: staleAfterEdit.canonicalDocument.lines[0].lineId, field: 'x', value: -1 });
+assert.equal(movedStart.ok, true);
+const editedArc = movedStart.executionUpdate.cache.segments.find((segment) => segment.arc);
+assert.deepEqual(editedArc.start, { x: -1, y: 0, z: 0 });
+assert.ok(Math.abs(editedArc.arc.sweep) > Math.PI, 'edited predecessor makes the G3 arc major');
+const editedMachineText = serializeMachineNcDocument(movedStart.document);
+assert.match(editedMachineText, /G3 X0 Y1 Z0 R-1 F100/);
+const editedRoundTrip = mustImport(editedMachineText).executionCache.segments.find((segment) => segment.arc);
+assert.equal(editedRoundTrip.arc.direction, editedArc.arc.direction);
+assert.ok(Math.abs(editedRoundTrip.arc.sweep - editedArc.arc.sweep) <= 1e-6);
+assert.deepEqual(editedRoundTrip.start, editedArc.start);
+
+const staleAfterDelete = mustImport('G0 X1 Y0 Z0\nG0 X-1 Y0 Z0\nG3 X0 Y1 I1 J0 F100\n');
+const deletedStart = deleteCanonicalLinesCommand({ document: staleAfterDelete.canonicalDocument, expectedRevision: 0, lineIds: [staleAfterDelete.canonicalDocument.lines[1].lineId], initialCanonicalText: staleAfterDelete.canonicalText });
+assert.equal(deletedStart.ok, true);
+const deletedExecutionArc = executeCanonicalDocument(deletedStart.document).segments.find((segment) => segment.arc);
+assert.deepEqual(deletedExecutionArc.start, { x: 1, y: 0, z: 0 });
+assert.ok(Math.abs(deletedExecutionArc.arc.sweep) < Math.PI, 'deleted predecessor makes the remaining G3 arc short');
+const deletedMachineText = serializeMachineNcDocument(deletedStart.document);
+assert.match(deletedMachineText, /G3 X0 Y1 Z0 R1 F100/);
+const deletedRoundTrip = mustImport(deletedMachineText).executionCache.segments.find((segment) => segment.arc);
+assert.equal(deletedRoundTrip.arc.direction, deletedExecutionArc.arc.direction);
+assert.ok(Math.abs(deletedRoundTrip.arc.sweep - deletedExecutionArc.arc.sweep) <= 1e-6);
+assert.deepEqual(deletedRoundTrip.start, deletedExecutionArc.start);
 
 const fullCircle = mustImport('G0 X1 Y0 Z0\nG2 X1 Y0 I-1 J0 F100\n');
 assert.throws(
