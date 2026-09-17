@@ -272,7 +272,7 @@ export function createNcUi(ctx) {
   function setDirtyState(dirty) {
     if (ncDownloadNormalizedButton) {
       ncDownloadNormalizedButton.disabled = sourceLines.length === 0;
-      ncDownloadNormalizedButton.textContent = dirty ? 'Download edited NC' : 'Download normalized NC';
+      ncDownloadNormalizedButton.textContent = dirty ? 'Download edited NC' : 'Download machine NC';
     }
   }
 

@@ -55,7 +55,7 @@ export function serializeCanonicalLine(line) {
     }
     canonicalParts.push(`F${formatCanonicalNumber(line.feed)}`);
     if (!line.block?.tokens?.length) return canonicalParts.join(' ');
-    return serializePreservedMotionBlock(line, canonicalParts);
+    return serializeMotionBlock(line, canonicalParts);
   }
   if (line.kind === 'opaque' && line.block?.tokens?.length) return serializePreservedOpaqueBlock(line);
   return line.text ?? '';
@@ -65,7 +65,9 @@ const CANONICAL_FIELD_LETTERS = new Set(['X', 'Y', 'Z', 'I', 'J', 'R', 'F']);
 const CONSUMED_MODAL_G_CODES = new Set(['G17', 'G20', 'G21', 'G90', 'G91', 'G90.1', 'G91.1']);
 const MOTION_G_CODES = new Set(['G0', 'G1', 'G2', 'G3']);
 
-function serializePreservedMotionBlock(line, canonicalParts) {
+// Shared by explicit output profiles so preserved source words/comments follow
+// the canonical replacement policy without making their geometry textual.
+export function serializeMotionBlock(line, canonicalParts) {
   const comments = [];
   const before = [];
   const after = [];
