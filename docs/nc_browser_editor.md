@@ -1574,6 +1574,16 @@ The implemented profile is intentionally narrow and project-specific:
 - serialized canonical arcs emit deterministic relative `I`/`J` offsets computed from the absolute center and start point;
 - numeric output uses `.` as decimal separator, fixed maximum precision, trimmed trailing zeros, `-0` normalized to `0`, and a terminal LF newline.
 
+The downloadable machine candidate is a separate output boundary. The working
+canonical arc remains center-based and its internal deterministic serializer
+continues to emit `I`/`J`; machine export derives signed `R` directly from that
+semantic start/end/center/direction geometry. The arc start is the effective
+position produced by sequentially traversing the current document, so edits or
+deletions of preceding motions cannot leave machine output using a stale stored
+start. Arcs longer than 180° use negative `R`, while full circles fail closed
+because this controller profile cannot represent them unambiguously with a
+single `R` block.
+
 ### Normalized, preserved and rejected constructs
 
 NC-E1 normalizes the subset already executed deterministically by the viewer parser:

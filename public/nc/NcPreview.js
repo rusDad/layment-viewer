@@ -2,6 +2,7 @@ import { NC_MAX_FILE_BYTES } from './nc-parser.mjs';
 import { importNcToCanonicalDocument } from './import/canonical-normalizer.mjs';
 import { applyBatchNumericOperationCommand, applyUpdateCanonicalNumericFieldCommand, buildBatchNumericEditPlan, createBatchNumericOperation, createEditedNcFilename, deleteCanonicalLinesCommand, getCanonicalLineEditReadModel } from './document/CanonicalNcEditor.mjs';
 import { serializeCanonicalNcDocument } from './document/CanonicalNcDocument.mjs';
+import { serializeMachineNcDocument } from './output/MachineNcSerializer.mjs';
 import { recalculateCanonicalExecution } from './execution/NcCanonicalExecution.mjs';
 import { analyzeNcExecutionCache } from './execution/NcProgramAnalysis.mjs';
 import { NcEditHistory } from './document/NcEditHistory.mjs';
@@ -405,7 +406,14 @@ export function createNcPreview(ctx, {
 
   function downloadNormalizedCandidate() {
     if (!activeDocument) return;
-    const text = serializeCanonicalNcDocument(activeDocument);
+    let text;
+    try {
+      text = serializeMachineNcDocument(activeDocument);
+    } catch (err) {
+      const code = err?.code || 'machine-export-failed';
+      ncUi.setNcStatus(`${code}: ${err instanceof Error ? err.message : String(err)}`, true);
+      return;
+    }
     const blob = new Blob([text], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
