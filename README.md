@@ -2,19 +2,38 @@
 
 Вспомогательный web-сервис для 3D-предпросмотра ложементов и отладки производственных файлов.
 
-Viewer поддерживает три независимых сценария:
+Viewer поддерживает четыре независимых сценария:
 
-1. построение 3D-модели ложемента из SVG;
-2. загрузку, сохранение и просмотр STL-модели по уникальной ссылке;
-3. debug-визуализацию траектории `.nc` поверх габаритного объёма ложемента.
+1. canonical product preview из backend-prepared `PreviewSceneV1`;
+2. SVG → 3D как explicit debug/legacy workflow;
+3. загрузку, сохранение и просмотр STL-модели по уникальной ссылке;
+4. debug-визуализацию и browser editing траектории `.nc` поверх габаритного объёма ложемента.
 
 Viewer не является источником истины для производственной геометрии, G-code или заказа. Его назначение — визуальная проверка, демонстрация и диагностика.
 
 ## Возможности
 
-### SVG → 3D
+### PreviewSceneV1 → product 3D preview
 
-SVG передаётся на backend endpoint, где:
+Layment Designer подготавливает geometry-based `PreviewSceneV1` через общий manufacturing-scene boundary и передаёт его Viewer через one-shot same-origin `localStorage` payload.
+
+Viewer:
+
+- строго валидирует version/units/coordinate system и DTO shape;
+- принимает уже размещённые contour rings, rectangle corners и circles;
+- поддерживает независимую глубину каждого pocket;
+- строит multi-depth boolean layers через `polygon-clipping`;
+- корректно обрабатывает overlap, nesting, holes/islands и identical-depth union;
+- строит Three.js extrusion meshes и отображает materials/texts;
+- не загружает Geometry V3 и не знает `variantId`, Fabric anchors или manufacturing rotations.
+
+Product preview не реконструирует geometry из SVG и не использует один global pocket depth.
+
+Полный DTO описан в `docs/preview_scene_v1.md`.
+
+### SVG → 3D — debug/legacy
+
+SVG pipeline сохранён как отдельный диагностический инструмент. SVG передаётся на backend endpoint, где:
 
 - разбираются поддерживаемые SVG-примитивы и `path`;
 - применяются SVG transforms;
@@ -29,7 +48,9 @@ Frontend строит многослойную модель ложемента �
 SVG можно открыть:
 
 - вручную через debug UI;
-- через интеграционный `localStorage` payload и query-параметр `payloadKey`.
+- через explicit legacy `?debug=1&payloadKey=...` payload.
+
+Этот pipeline не является canonical product-preview geometry path.
 
 ### STL upload и preview
 
@@ -71,10 +92,11 @@ Viewer:
 - разбирает поддерживаемые движения G0/G1/G2/G3;
 - строит линии траектории по типам движения;
 - отображает их поверх полупрозрачного габаритного box;
-- показывает статистику сегментов, bounding box, modal state и warnings;
-- позволяет менять цвета G0/G1/G2/G3 и прозрачность box.
+- показывает статистику, source/selection/edit diagnostics;
+- поддерживает canonical browser editing и normalized NC download;
+- позволяет менять presentation settings без изменения manufacturing authority.
 
-NC preview не выполняет CAM-валидацию и не подтверждает безопасность или корректность управляющей программы для станка.
+NC preview/editor не выполняет production-authoritative CAM validation и не подтверждает безопасность или корректность управляющей программы для станка.
 
 ## Режимы UI
 
@@ -92,13 +114,7 @@ http://localhost:3000/
 http://localhost:3000/?debug=1
 ```
 
-В debug mode доступны:
-
-- SVG upload;
-- STL upload;
-- NC preview;
-- диагностическая информация;
-- axes helper и debug-style сцена.
+В debug mode доступны SVG tooling, ссылки на STL/NC tools, диагностическая информация, axes helper и debug-style сцена.
 
 ### Preview mode: PreviewSceneV1
 
@@ -106,7 +122,7 @@ http://localhost:3000/?debug=1
 http://localhost:3000/?payloadKey=<localStorage-key>
 ```
 
-Viewer читает строгий geometry-based `PreviewSceneV1` из `localStorage`, строит независимые по глубине карманы и затем удаляет использованный ключ. Геометрия задаётся в миллиметрах в системе `origin-bottom-left`; SVG в product preview не используется. Полный DTO описан в `docs/preview_scene_v1.md`.
+Viewer читает строгий geometry-based `PreviewSceneV1` из `localStorage`, строит независимые по глубине карманы и затем удаляет использованный ключ. Геометрия задаётся в миллиметрах в системе `origin-bottom-left`; SVG в product preview не используется.
 
 Legacy SVG payload можно открыть только явно в debug-режиме:
 
@@ -137,15 +153,17 @@ Viewer запрашивает сохранённый STL у backend и откр�
 
 ## HTTP API
 
+Canonical `PreviewSceneV1` product preview не требует Viewer HTTP geometry endpoint: scene обрабатывается в browser runtime.
+
 ### POST `/svg3d-api/upload-svg`
 
-Принимает `multipart/form-data`:
+Debug/legacy endpoint. Принимает `multipart/form-data`:
 
 ```text
 file=<svg file>
 ```
 
-Возвращает нормализованную geometry-модель и metadata для построения 3D preview.
+Возвращает нормализованную geometry-модель и metadata для SVG debug renderer.
 
 Пример:
 
@@ -217,32 +235,45 @@ http://localhost:3000
 npm test
 ```
 
-Текущий test suite должен проверять как минимум:
+Текущий test suite проверяет в том числе:
 
+- strict `PreviewSceneV1` parsing;
+- multi-depth topology, overlap/nesting, asymmetric orientation и text anchoring;
 - объединение пересекающихся SVG-карманов;
 - построение top regions и вложенных островков;
-- NC parser и его modal/geometry cases.
+- routing product/debug preview modes;
+- NC parser/canonical/execution/editor regressions.
 
-Любое изменение SVG classification, polygon union, top-region logic или NC parsing должно сопровождаться regression test.
+Изменение PreviewScene boolean semantics, SVG classification/polygon union или NC parsing должно сопровождаться focused regression coverage.
 
 ## Структура
 
 ```text
 public/
-  app.js              Three.js scene, UI modes, SVG/STL/NC rendering
-  nc-parser.mjs       pure NC parsing and toolpath model
+  app.js                         root composition / renderer selection
+  routing.js
+  core/                          shared Three.js lifecycle
+  svg3d/
+    PreviewSceneModel.mjs        strict DTO + multi-depth boolean layers
+    PreviewSceneViewer.js        canonical product renderer
+    PreviewTextTransform.js
+    SvgViewer.js                 debug/legacy SVG renderer
+  stl/                           STL upload/preview
+  nc/                            NC browser viewer/editor
   index.html
   style.css
 
 test/
+  preview-scene.test.mjs
+  routing.test.mjs
   overlap-union.test.js
   top-regions.test.js
-  nc-parser.test.mjs
+  nc-*.test.mjs
 
-uploads/
-  stl/                runtime STL storage; создаётся автоматически
+fixtures/preview-scene/           deterministic PreviewScene fixtures
+uploads/stl/                      runtime STL storage; создаётся автоматически
 
-server.js             Express API, SVG geometry processing, STL persistence
+server.js                         Express/static, SVG debug processing, STL persistence
 package.json
 README.md
 AGENTS.md
@@ -266,7 +297,7 @@ three@0.185.0 / r185
 - `BufferGeometryUtils`;
 - другие используемые addons.
 
-После обновления вручную проверить SVG, STL и NC preview, camera fit, mouse controls, материалы, освещение и тени.
+После обновления вручную проверить PreviewScene product preview, SVG debug preview, STL и NC preview, camera fit, mouse controls, материалы, освещение и тени.
 
 ## Ограничения и статус
 
@@ -277,8 +308,11 @@ Viewer остаётся вспомогательным сервисом прое
 - заменять backend manufacturing validation;
 - интерпретировать preview как доказательство корректности G-code;
 - становиться владельцем order semantics;
+- загружать/переинтерпретировать Geometry V3 ради product preview;
 - менять исходные STL или NC данные ради визуального удобства;
 - вводить скрытые unit conversion или геометрический scale.
+
+Текущий product handoff через `localStorage[payloadKey]` one-shot и same-origin. Его можно заменить только при конкретной необходимости, сохранив `PreviewSceneV1` как контракт.
 
 ## Standalone Shared UI distribution
 

@@ -2,9 +2,9 @@
 
 ## Назначение
 
-Краткий справочник по фактическому snapshot `layment-viewer` на этапе NC-E5: структура, ответственность файлов, основные потоки и действующие контракты.
+Краткий справочник по фактическому состоянию `layment-viewer`: структура, ответственность файлов, основные потоки и действующие контракты.
 
-Viewer является вспомогательным сервисом. Он строит preview и диагностирует NC, но не владеет заказами, pricing, каталогом, производственной генерацией или authoritative manufacturing validation.
+Viewer является вспомогательным presentation/diagnostics service. Он строит product preview и диагностирует NC, но не владеет заказами, pricing, каталогом, производственной генерацией или authoritative manufacturing validation.
 
 ---
 
@@ -14,13 +14,20 @@ Viewer является вспомогательным сервисом. Он с
 Node / Express
   server.js
     ├─ static public/
-    ├─ SVG -> normalized geometry JSON
+    ├─ SVG -> normalized geometry JSON       debug/legacy
     └─ STL upload/storage/download
 
 Browser shared runtime
   public/core/*
 
-SVG preview
+Product PreviewScene
+  public/app.js
+    -> PreviewSceneViewer.js
+       -> PreviewSceneModel.mjs
+       -> polygon-clipping
+       -> Three.js layered extrusion
+
+SVG debug/legacy
   public/app.js -> SvgViewer.js -> /svg3d-api/upload-svg
 
 STL
@@ -35,6 +42,8 @@ NC tools
        -> execution/*
        -> scene/UI/picking/selection
 ```
+
+Canonical product preview consumes prepared `PreviewSceneV1`; SVG classification is not its geometry source.
 
 NC-подсистема разделена на четыре уровня:
 
@@ -53,7 +62,7 @@ raw source
 
 | URL | Entry point | Роль |
 |---|---|---|
-| `/` или `/svg3d/` | `public/index.html` → `public/app.js` | SVG debug tool или preview |
+| `/` или `/svg3d/` | `public/index.html` → `public/app.js` | SVG debug tool |
 | `/?payloadKey=<key>` | `public/app.js` → `PreviewSceneViewer.js` | канонический одноразовый `PreviewSceneV1` из `localStorage` |
 | `/?debug=1&payloadKey=<key>` | `public/app.js` → `SvgViewer.js` | явный legacy SVG payload для диагностики |
 | `/?stl=<id>` | `public/app.js` → `StlViewer.js` | preview сохранённого STL |
@@ -67,10 +76,30 @@ raw source
 
 ## 3. Основные потоки
 
-### SVG file → 3D
+### Product PreviewSceneV1 → 3D
 
 ```text
-SVG file
+Designer frontend
+  -> POST /api/preview/scene
+  -> strict PreviewSceneV1
+  -> localStorage[payloadKey]
+  -> opens Viewer ?payloadKey=<key>
+  -> PreviewSceneViewer parses scene
+  -> PreviewSceneModel builds multi-depth solid regions
+  -> browser builds layered Three.js model
+  -> removes localStorage key
+```
+
+`PreviewSceneV1` уже содержит размещённые contour rings, rectangle corners, circles, independent pocket depths, layment dimensions/material and texts in `origin-bottom-left` millimetres. Viewer не делает Geometry V3 lookup, не знает `variantId`/Fabric anchors и не переинтерпретирует manufacturing rotation.
+
+Для каждого depth interval Viewer вычитает union всех pockets, глубина которых достигает нижней границы interval. Boolean topology, а не draw order, определяет overlap, nesting, holes и islands.
+
+Контракт handoff same-origin и one-shot: после чтения ключ удаляется, поэтому refresh URL сам по себе preview не восстанавливает.
+
+### SVG file → 3D — debug/legacy
+
+```text
+SVG file or explicit debug payload
   -> SvgViewer
   -> POST /svg3d-api/upload-svg
   -> server.js parses shapes/transforms/curves
@@ -78,20 +107,7 @@ SVG file
   -> browser builds layered Three.js model
 ```
 
-Server возвращает 2D geometry JSON, а не mesh. Extrusion, материалы и тексты строятся в браузере.
-
-### Preview из конструктора
-
-```text
-frontend writes localStorage[payloadKey]
-  -> opens viewer ?payloadKey=<key>
-  -> SvgViewer reads payload
-  -> sends payload.svg to SVG endpoint
-  -> applies color/thickness/texts
-  -> removes localStorage key
-```
-
-Контракт same-origin и one-shot: после чтения ключ удаляется, поэтому refresh URL сам по себе preview не восстанавливает.
+Server возвращает 2D geometry JSON, а не mesh. Этот pipeline остаётся диагностическим/legacy и не является source geometry canonical product preview.
 
 ### STL
 
@@ -141,38 +157,46 @@ NC-файл не отправляется на Node server.
 ### 4.1 Viewer query
 
 ```text
-payloadKey: string   localStorage key для SVG preview
+payloadKey: string   localStorage key для PreviewSceneV1; с debug=1 — legacy SVG payload
 stl: string          server-side STL id
 debug: "1"          принудительный debug mode
 ```
 
-Route priority: `stl` → STL preview; затем `payloadKey` → SVG preview; иначе SVG tool.
+Route priority: `stl` → STL preview; затем `payloadKey` → product `PreviewSceneV1`, если `debug != 1`; explicit `debug=1&payloadKey=...` → legacy SVG renderer; иначе SVG debug tool.
 
-### 4.2 Preview payload в localStorage
+Внутреннее имя route enum `SVG_PREVIEW` историческое; renderer selection в `public/app.js` является фактическим runtime boundary.
 
-Предпочтительный shape:
+### 4.2 Product payload в localStorage — `PreviewSceneV1`
+
+Canonical product payload определён в `docs/preview_scene_v1.md`.
 
 ```text
-{
-  svg: string,
-  baseMaterialColor: "green" | "blue",
-  laymentThicknessMm: 35 | 65,
-  texts: Array<{
-    text: string,
-    x: number,
-    y: number,
-    angle?: number,
-    fontSizeMm: number,
-    kind?: string
-  }>
-}
+version: 1
+units: "mm"
+coordinateSystem: "origin-bottom-left"
+
+layment:
+  width
+  height
+  thicknessMm
+  baseMaterialColor
+
+pockets:
+  contours[] { ring, depthMm }
+  rects[]    { corners, depthMm }
+  circles[]  { center, radius, depthMm }
+
+texts[]:
+  text, x, y, angle, fontSizeMm
 ```
 
-Для compatibility также читаются raw SVG string, `svgText`, `content`, `payload.svg`, `payload.svgText` и metadata wrappers.
+`PreviewSceneModel.mjs` строго отклоняет unknown/missing fields, неверные version/units/frame, non-finite или non-positive dimensions/depths/radii, malformed rings/corners и pocket depth больше толщины ложемента.
 
-Неизвестный цвет нормализуется в `green`, неизвестная толщина — в `35`.
+Product renderer не читает SVG из этого payload и не использует `/svg3d-api/upload-svg`.
 
-### 4.3 `POST /svg3d-api/upload-svg`
+Legacy SVG payload aliases (`svg`, `svgText`, `content`, nested payload/metadata wrappers и raw SVG string) остаются только за explicit debug path.
+
+### 4.3 `POST /svg3d-api/upload-svg` — debug/legacy
 
 Request:
 
@@ -274,13 +298,11 @@ ProgramAnalysis
 
 ### `package.json`
 
-Node package metadata, entrypoint `server.js`, команды `dev/start/test`, server-side зависимости.
-
-`test` ссылается на `test/*.test.*`, но папка tests в snapshot отсутствует.
+Node package metadata, entrypoint `server.js`, команды `dev/start/test`, server-side зависимости. Standard `npm test` включает PreviewScene, routing, Shared UI и NC regression suites.
 
 ### `server.js`
 
-Node/Express composition root и server-side geometry pipeline.
+Node/Express composition root и server-side SVG/STL pipeline.
 
 Ответственность:
 
@@ -289,15 +311,17 @@ Node/Express composition root и server-side geometry pipeline.
 - SVG XML/path/transform parsing;
 - curve flattening;
 - outer/hole classification;
-- pocket union и `topRegions`;
+- pocket union и `topRegions` для debug SVG path;
 - STL filesystem storage;
 - exports geometry helpers для tests.
+
+`PreviewSceneV1` product geometry не проходит через server-side SVG parser.
 
 Вход: multipart SVG/STL, `uploads/stl/`, optional `UNION_DEBUG=1`.
 
 Выход: static files, geometry JSON, STL id/files.
 
-Риск: HTTP, storage и geometry algorithms находятся в одном 900-line module.
+Риск: HTTP, storage и SVG geometry algorithms находятся в одном крупном module.
 
 ---
 
@@ -305,16 +329,18 @@ Node/Express composition root и server-side geometry pipeline.
 
 ### `public/index.html`
 
-DOM root SVG/STL preview page. Содержит SVG upload panel, links на STL/NC tools, preview status и `#canvas-root`.
+DOM root PreviewScene/SVG/STL preview page. Содержит debug SVG upload panel, links на STL/NC tools, preview status и `#canvas-root`.
 
-Подключает Three.js `0.185.0` через jsDelivr import map и `app.js`.
+Подключает Three.js `0.185.0` через jsDelivr import map, browser `polygon-clipping` и `app.js`.
 
 ### `public/app.js`
 
 Composition root root-page.
 
 - разбирает query;
-- выбирает `SvgViewer` или `StlViewer`;
+- выбирает `PreviewSceneViewer`, `SvgViewer` или `StlViewer`;
+- обычный `payloadKey` направляет в `PreviewSceneViewer`;
+- `debug=1&payloadKey=...` направляет legacy payload в `SvgViewer`;
 - создаёт scene/ViewerBase;
 - предоставляет status callbacks;
 - владеет общей очисткой `state.modelGroup`.
@@ -323,11 +349,11 @@ Composition root root-page.
 
 Чистая query/route policy: `ViewerMode`, `ViewerRoute`, parsing `payloadKey/stl/debug`, STL preview URL builder.
 
-Fetch и DOM не выполняет.
+Fetch и DOM не выполняет. Историческое route имя `SVG_PREVIEW` само по себе не определяет renderer; product/debug split выполняется composition root.
 
 ### `public/style.css`
 
-Общие стили root, SVG preview, STL page и NC tools. Бизнес-логики нет; зависит от HTML ids/classes и runtime mode classes.
+Общие стили root, PreviewScene/SVG preview, STL page и NC tools. Бизнес-логики нет; зависит от HTML ids/classes и runtime mode classes.
 
 ---
 
@@ -356,23 +382,52 @@ Preview profile: светлый фон, ACES tone mapping, shadows. Debug profil
 
 ## `public/svg3d/`
 
+### `public/svg3d/PreviewSceneModel.mjs`
+
+Strict `PreviewSceneV1` parser и pure boolean-layer builder.
+
+- проверяет exact DTO boundary, dimensions/depths/frame;
+- tessellates circles только для boolean operations;
+- нормализует contour/rect/circle footprints;
+- собирает unique pocket depths;
+- на каждом Z interval вычитает union всех active cuts из layment footprint;
+- сохраняет polygon holes/islands из `polygon-clipping` topology.
+
+Не зависит от Three.js, DOM, Geometry V3 или catalog identity.
+
+### `public/svg3d/PreviewSceneViewer.js`
+
+Canonical product PreviewScene renderer.
+
+- читает one-shot scene JSON из `localStorage`;
+- вызывает strict parser/layer builder;
+- extrudes resulting multipolygons по depth intervals;
+- разделяет top skin/base materials;
+- рендерит texts в manufacturing bottom-left frame;
+- добавляет model group в shared Three.js scene;
+- удаляет payload после consumption.
+
+### `public/svg3d/PreviewTextTransform.js`
+
+Pure manufacturing-frame text transform. Сохраняет supplied left-baseline anchor при rotation и не использует legacy top-left SVG mapping.
+
 ### `public/svg3d/SvgViewer.js`
 
-Browser controller SVG→3D.
+Browser controller SVG→3D для manual debug upload и explicit legacy payload.
 
 - manual upload и upload SVG text;
-- чтение/removal preview payload из `localStorage`;
+- legacy payload aliases при `debug=1`;
 - вызов SVG endpoint;
 - visual settings normalization;
-- построение top/pocket/base EVA layers;
+- построение top/pocket/base EVA layers из SVG-derived geometry;
 - text overlays через CanvasTexture;
 - resource cleanup.
 
-Вход: geometry response и preview metadata.
+Вход: debug SVG geometry response и legacy preview metadata.
 
 Выход: Three.js `state.modelGroup`.
 
-Текстовый transport использует top-left `x/y`; перед Three.js placement Y преобразуется через высоту outer contour.
+Legacy текстовый transport использует top-left `x/y`; перед Three.js placement Y преобразуется через высоту outer contour. Эти semantics не относятся к `PreviewSceneV1`.
 
 ---
 
@@ -603,10 +658,12 @@ Owner execution semantics/cache:
 | Задача | Файл/слой |
 |---|---|
 | server route / upload | `server.js` |
-| SVG parsing/boolean geometry | geometry functions в `server.js` |
-| SVG model/material/text | `SvgViewer.js` |
+| PreviewScene DTO / boolean layers | `PreviewSceneModel.mjs` |
+| PreviewScene product rendering/text | `PreviewSceneViewer.js` / `PreviewTextTransform.js` |
+| SVG debug parsing/boolean geometry | geometry functions в `server.js` |
+| SVG debug model/material/text | `SvgViewer.js` |
 | camera/light/runtime | `public/core/*` |
-| query routing | `routing.js` |
+| query routing | `routing.js` + `public/app.js` composition |
 | STL rendering | `StlViewer.js` |
 | NC import rule | `canonical-normalizer.mjs` + parser helpers |
 | canonical shape/serialization | `CanonicalNcDocument.mjs` |
@@ -619,6 +676,8 @@ Owner execution semantics/cache:
 | picking | `NcPickingController.js` / `NcPickingMath.js` |
 | selection | `NcSelectionController.js` / `NcSelectionQuery.mjs` |
 
+Product PreviewScene geometry changes belong to the explicit scene parser/layer/renderer boundary, not the SVG server pipeline.
+
 Document mutations не следует добавлять в `NcUi.js` или `NcScene.js`; они должны проходить через canonical editor и `NcPreview` orchestration.
 
 ---
@@ -627,7 +686,7 @@ Document mutations не следует добавлять в `NcUi.js` или `N
 
 ### Mixed server module
 
-`server.js` объединяет transport, storage, SVG parser и polygon operations. Это главный structural hotspot.
+`server.js` объединяет transport, storage, SVG parser и polygon operations. Это главный structural hotspot для legacy/debug SVG and STL server work; canonical PreviewScene geometry does not depend on this parser.
 
 ### Main-thread NC import
 
@@ -635,7 +694,7 @@ Document mutations не следует добавлять в `NcUi.js` или `N
 
 ### One-shot preview payload
 
-`payloadKey` зависит от общей origin/localStorage и удаляется после чтения. Это не воспроизводимый artifact URL.
+`payloadKey` зависит от общей origin/localStorage и удаляется после чтения. Это не воспроизводимый artifact URL. Текущий contract допускает этот handoff до появления измеренной проблемы размера/жизненного цикла payload.
 
 ### STL storage lifecycle
 
@@ -649,15 +708,13 @@ STL ограничен 20 MB; SVG memory upload не имеет явно зад�
 
 Three.js runtime загружается с jsDelivr; offline/self-contained запуск не гарантирован.
 
-### Snapshot gaps
+### Repository housekeeping
 
-- tests перечислены в `package.json`, но не приложены;
-- HTML ссылается на `favicon.ico`, которого нет в tree;
-- `uploads/` отсутствует в `.gitignore`.
+`uploads/` отсутствует в `.gitignore`.
 
 ### Coordinate transforms
 
-NC X-flip и SVG/Three.js axis transformations относятся только к presentation. Их нельзя автоматически переносить в backend/CAM semantics.
+PreviewScene product input уже находится в declared `origin-bottom-left` frame и не должен получать legacy SVG transforms. NC X-flip и SVG/Three.js axis transformations относятся только к соответствующей presentation path; их нельзя автоматически переносить в backend/CAM semantics.
 
 ---
 
@@ -665,13 +722,16 @@ NC X-flip и SVG/Three.js axis transformations относятся только �
 
 ```text
 server.js
-  HTTP/static, SVG preprocessing response, STL storage
+  HTTP/static, debug SVG preprocessing response, STL storage
 
 routing/app/core
-  viewer mode, lifecycle, common Three.js environment
+  viewer mode, renderer selection, lifecycle, common Three.js environment
+
+PreviewSceneModel / PreviewSceneViewer
+  canonical product-preview presentation geometry
 
 SvgViewer / StlViewer
-  format-specific preview presentation
+  explicit legacy/debug SVG and STL presentation
 
 NC document/import/execution
   NC semantics inside viewer
@@ -689,4 +749,4 @@ Viewer может сформировать normalized/edited NC candidate, но 
 
 ## 9. Update policy
 
-Обновлять карту при изменении entrypoints, endpoints, payload shape, canonical profile, coordinate mapping, module ownership или состава runtime-файлов. Документ должен описывать текущее состояние, а не историю PR.
+Обновлять карту при изменении entrypoints, endpoints, payload shape, PreviewScene contract, canonical NC profile, coordinate mapping, module ownership или состава runtime-файлов. Документ должен описывать текущее состояние, а не историю PR.
