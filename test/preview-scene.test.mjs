@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
-import { buildPreviewSceneLayers, parsePreviewSceneV1 } from '../public/svg3d/PreviewSceneModel.mjs';
+import { buildPreviewSceneLayers, parsePreviewScene } from '../public/svg3d/PreviewSceneModel.mjs';
 import { resolvePreviewTextTransform } from '../public/svg3d/PreviewTextTransform.js';
 const require = createRequire(import.meta.url);
 const clipping = require('polygon-clipping');
-const load = (name) => parsePreviewSceneV1(JSON.parse(fs.readFileSync(new URL(`../fixtures/preview-scene/${name}.json`, import.meta.url))));
+const readFixture = (name) => JSON.parse(fs.readFileSync(new URL(`../fixtures/preview-scene/${name}.json`, import.meta.url)));
+const load = (name) => parsePreviewScene(readFixture(name));
 const EPSILON = 1e-9;
 
 function assertClose(actual, expected, message) {
@@ -27,10 +28,18 @@ function assertTextBaselinePreserved(input) {
   assertClose(worldBaselineY, input.yMm, 'preview text Y baseline anchor');
 }
 
-assert.throws(() => parsePreviewSceneV1({ version: 2 }), /version|unknown|required/);
-const malformed = JSON.parse(fs.readFileSync(new URL('../fixtures/preview-scene/one-contour.json', import.meta.url)));
+const canonical = readFixture('one-contour');
+assert.equal(parsePreviewScene(canonical).schemaVersion, 1);
+assert.throws(() => parsePreviewScene({ ...canonical, schemaVersion: undefined }), /schemaVersion must be 1/);
+assert.throws(() => parsePreviewScene({ ...canonical, schemaVersion: 2 }), /schemaVersion must be 1/);
+const { schemaVersion: _schemaVersion, ...withoutSchemaVersion } = canonical;
+assert.throws(() => parsePreviewScene(withoutSchemaVersion), /schemaVersion is required/);
+assert.throws(() => parsePreviewScene({ ...withoutSchemaVersion, version: 1 }), /unknown field version/);
+assert.throws(() => parsePreviewScene({ ...canonical, unexpected: true }), /unknown field unexpected/);
+
+const malformed = readFixture('one-contour');
 malformed.pockets.contours[0].depthMm = 36;
-assert.throws(() => parsePreviewSceneV1(malformed), /exceeds/);
+assert.throws(() => parsePreviewScene(malformed), /exceeds/);
 
 const expected = {
   'disjoint-depths': [10, 24],
@@ -78,4 +87,4 @@ const textTransformInput = {
   assertTextBaselinePreserved({ ...textTransformInput, angleDeg });
 });
 
-console.log('OK: PreviewSceneV1 parser, topology and text baseline regression passed.');
+console.log('OK: PreviewScene parser, schema boundary, topology and text baseline regression passed.');

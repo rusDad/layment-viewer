@@ -43,7 +43,7 @@ NC tools
        -> scene/UI/picking/selection
 ```
 
-Canonical product preview consumes prepared `PreviewSceneV1`; SVG classification is not its geometry source.
+Canonical product preview consumes prepared `PreviewScene`; SVG classification is not its geometry source.
 
 NC-подсистема разделена на четыре уровня:
 
@@ -63,7 +63,7 @@ raw source
 | URL | Entry point | Роль |
 |---|---|---|
 | `/` или `/svg3d/` | `public/index.html` → `public/app.js` | SVG debug tool |
-| `/?payloadKey=<key>` | `public/app.js` → `PreviewSceneViewer.js` | канонический одноразовый `PreviewSceneV1` из `localStorage` |
+| `/?payloadKey=<key>` | `public/app.js` → `PreviewSceneViewer.js` | канонический одноразовый `PreviewScene` из `localStorage` |
 | `/?debug=1&payloadKey=<key>` | `public/app.js` → `SvgViewer.js` | явный legacy SVG payload для диагностики |
 | `/?stl=<id>` | `public/app.js` → `StlViewer.js` | preview сохранённого STL |
 | `/?debug=1` | `public/app.js` | принудительный debug mode |
@@ -76,12 +76,12 @@ raw source
 
 ## 3. Основные потоки
 
-### Product PreviewSceneV1 → 3D
+### Product PreviewScene → 3D
 
 ```text
 Designer frontend
   -> POST /api/preview/scene
-  -> strict PreviewSceneV1
+  -> strict PreviewScene
   -> localStorage[payloadKey]
   -> opens Viewer ?payloadKey=<key>
   -> PreviewSceneViewer parses scene
@@ -90,7 +90,7 @@ Designer frontend
   -> removes localStorage key
 ```
 
-`PreviewSceneV1` уже содержит размещённые contour rings, rectangle corners, circles, independent pocket depths, layment dimensions/material and texts in `origin-bottom-left` millimetres. Viewer не делает Geometry V3 lookup, не знает `variantId`/Fabric anchors и не переинтерпретирует manufacturing rotation.
+`PreviewScene` уже содержит размещённые contour rings, rectangle corners, circles, independent pocket depths, layment dimensions/material and texts in `origin-bottom-left` millimetres. Viewer не делает Geometry V3 lookup, не знает `variantId`/Fabric anchors и не переинтерпретирует manufacturing rotation.
 
 Для каждого depth interval Viewer вычитает union всех pockets, глубина которых достигает нижней границы interval. Boolean topology, а не draw order, определяет overlap, nesting, holes и islands.
 
@@ -157,21 +157,21 @@ NC-файл не отправляется на Node server.
 ### 4.1 Viewer query
 
 ```text
-payloadKey: string   localStorage key для PreviewSceneV1; с debug=1 — legacy SVG payload
+payloadKey: string   localStorage key для PreviewScene; с debug=1 — legacy SVG payload
 stl: string          server-side STL id
 debug: "1"          принудительный debug mode
 ```
 
-Route priority: `stl` → STL preview; затем `payloadKey` → product `PreviewSceneV1`, если `debug != 1`; explicit `debug=1&payloadKey=...` → legacy SVG renderer; иначе SVG debug tool.
+Route priority: `stl` → STL preview; затем `payloadKey` → product `PreviewScene`, если `debug != 1`; explicit `debug=1&payloadKey=...` → legacy SVG renderer; иначе SVG debug tool.
 
 Внутреннее имя route enum `SVG_PREVIEW` историческое; renderer selection в `public/app.js` является фактическим runtime boundary.
 
-### 4.2 Product payload в localStorage — `PreviewSceneV1`
+### 4.2 Product payload в localStorage — `PreviewScene`
 
-Canonical product payload определён в `docs/preview_scene_v1.md`.
+Canonical product payload определён в `docs/preview_scene.md`.
 
 ```text
-version: 1
+schemaVersion: 1
 units: "mm"
 coordinateSystem: "origin-bottom-left"
 
@@ -190,7 +190,7 @@ texts[]:
   text, x, y, angle, fontSizeMm
 ```
 
-`PreviewSceneModel.mjs` строго отклоняет unknown/missing fields, неверные version/units/frame, non-finite или non-positive dimensions/depths/radii, malformed rings/corners и pocket depth больше толщины ложемента.
+`PreviewSceneModel.mjs` строго отклоняет unknown/missing fields, неверные schemaVersion/units/frame, non-finite или non-positive dimensions/depths/radii, malformed rings/corners и pocket depth больше толщины ложемента.
 
 Product renderer не читает SVG из этого payload и не использует `/svg3d-api/upload-svg`.
 
@@ -315,7 +315,7 @@ Node/Express composition root и server-side SVG/STL pipeline.
 - STL filesystem storage;
 - exports geometry helpers для tests.
 
-`PreviewSceneV1` product geometry не проходит через server-side SVG parser.
+`PreviewScene` product geometry не проходит через server-side SVG parser.
 
 Вход: multipart SVG/STL, `uploads/stl/`, optional `UNION_DEBUG=1`.
 
@@ -384,7 +384,7 @@ Preview profile: светлый фон, ACES tone mapping, shadows. Debug profil
 
 ### `public/svg3d/PreviewSceneModel.mjs`
 
-Strict `PreviewSceneV1` parser и pure boolean-layer builder.
+Strict `PreviewScene` parser и pure boolean-layer builder.
 
 - проверяет exact DTO boundary, dimensions/depths/frame;
 - tessellates circles только для boolean operations;
@@ -427,7 +427,7 @@ Browser controller SVG→3D для manual debug upload и explicit legacy payloa
 
 Выход: Three.js `state.modelGroup`.
 
-Legacy текстовый transport использует top-left `x/y`; перед Three.js placement Y преобразуется через высоту outer contour. Эти semantics не относятся к `PreviewSceneV1`.
+Legacy текстовый transport использует top-left `x/y`; перед Three.js placement Y преобразуется через высоту outer contour. Эти semantics не относятся к `PreviewScene`.
 
 ---
 

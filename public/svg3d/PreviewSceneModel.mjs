@@ -1,9 +1,9 @@
 const CIRCLE_SEGMENTS = 64;
 
-export function parsePreviewSceneV1(value) {
+export function parsePreviewScene(value) {
   fail(!isRecord(value), 'payload must be an object');
-  exactKeys(value, ['version', 'units', 'coordinateSystem', 'layment', 'pockets', 'texts'], 'scene');
-  fail(value.version !== 1, 'version must be 1');
+  exactKeys(value, ['schemaVersion', 'units', 'coordinateSystem', 'layment', 'pockets', 'texts'], 'scene');
+  fail(value.schemaVersion !== 1, 'schemaVersion must be 1');
   fail(value.units !== 'mm', 'units must be mm');
   fail(value.coordinateSystem !== 'origin-bottom-left', 'coordinateSystem must be origin-bottom-left');
 
@@ -37,7 +37,7 @@ export function parsePreviewSceneV1(value) {
     fail(typeof item.text !== 'string' || !item.text.trim(), `texts[${index}].text must be non-empty`);
     return { text: item.text, x: finite(item.x, 'text.x'), y: finite(item.y, 'text.y'), angle: finite(item.angle, 'text.angle'), fontSizeMm: positive(item.fontSizeMm, 'text.fontSizeMm') };
   });
-  return Object.freeze({ version: 1, units: 'mm', coordinateSystem: 'origin-bottom-left', layment: { width, height, thicknessMm, baseMaterialColor: layment.baseMaterialColor }, pockets: { contours, rects, circles }, texts });
+  return Object.freeze({ schemaVersion: 1, units: 'mm', coordinateSystem: 'origin-bottom-left', layment: { width, height, thicknessMm, baseMaterialColor: layment.baseMaterialColor }, pockets: { contours, rects, circles }, texts });
 }
 
 export function buildPreviewSceneLayers(scene, clipping) {
@@ -80,4 +80,4 @@ function positive(value, label) { const result = finite(value, label); fail(resu
 function array(value, label) { fail(!Array.isArray(value), `${label} must be an array`); return value; }
 function exactKeys(value, keys, label) { fail(!isRecord(value), `${label} must be an object`); const unknown = Object.keys(value).filter((key) => !keys.includes(key)); fail(unknown.length > 0, `${label} has unknown field ${unknown[0]}`); keys.forEach((key) => fail(!(key in value), `${label}.${key} is required`)); }
 function isRecord(value) { return value !== null && typeof value === 'object' && !Array.isArray(value); }
-function fail(condition, message) { if (condition) throw new TypeError(`Invalid PreviewSceneV1: ${message}`); }
+function fail(condition, message) { if (condition) throw new TypeError(`Invalid PreviewScene: ${message}`); }

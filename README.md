@@ -4,7 +4,7 @@
 
 Viewer поддерживает четыре независимых сценария:
 
-1. canonical product preview из backend-prepared `PreviewSceneV1`;
+1. canonical product preview из backend-prepared `PreviewScene`;
 2. SVG → 3D как explicit debug/legacy workflow;
 3. загрузку, сохранение и просмотр STL-модели по уникальной ссылке;
 4. debug-визуализацию и browser editing траектории `.nc` поверх габаритного объёма ложемента.
@@ -13,13 +13,13 @@ Viewer не является источником истины для произ
 
 ## Возможности
 
-### PreviewSceneV1 → product 3D preview
+### PreviewScene → product 3D preview
 
-Layment Designer подготавливает geometry-based `PreviewSceneV1` через общий manufacturing-scene boundary и передаёт его Viewer через one-shot same-origin `localStorage` payload.
+Layment Designer подготавливает geometry-based `PreviewScene` через общий manufacturing-scene boundary и передаёт его Viewer через one-shot same-origin `localStorage` payload.
 
 Viewer:
 
-- строго валидирует version/units/coordinate system и DTO shape;
+- строго валидирует schemaVersion/units/coordinate system и DTO shape;
 - принимает уже размещённые contour rings, rectangle corners и circles;
 - поддерживает независимую глубину каждого pocket;
 - строит multi-depth boolean layers через `polygon-clipping`;
@@ -29,7 +29,7 @@ Viewer:
 
 Product preview не реконструирует geometry из SVG и не использует один global pocket depth.
 
-Полный DTO описан в `docs/preview_scene_v1.md`.
+Полный DTO описан в `docs/preview_scene.md`.
 
 ### SVG → 3D — debug/legacy
 
@@ -116,13 +116,13 @@ http://localhost:3000/?debug=1
 
 В debug mode доступны SVG tooling, ссылки на STL/NC tools, диагностическая информация, axes helper и debug-style сцена.
 
-### Preview mode: PreviewSceneV1
+### Preview mode: PreviewScene
 
 ```text
 http://localhost:3000/?payloadKey=<localStorage-key>
 ```
 
-Viewer читает строгий geometry-based `PreviewSceneV1` из `localStorage`, строит независимые по глубине карманы и затем удаляет использованный ключ. Геометрия задаётся в миллиметрах в системе `origin-bottom-left`; SVG в product preview не используется.
+Viewer читает строгий geometry-based `PreviewScene` из `localStorage`, строит независимые по глубине карманы и затем удаляет использованный ключ. Геометрия задаётся в миллиметрах в системе `origin-bottom-left`; SVG в product preview не используется.
 
 Legacy SVG payload можно открыть только явно в debug-режиме:
 
@@ -153,7 +153,7 @@ Viewer запрашивает сохранённый STL у backend и откр�
 
 ## HTTP API
 
-Canonical `PreviewSceneV1` product preview не требует Viewer HTTP geometry endpoint: scene обрабатывается в browser runtime.
+Canonical `PreviewScene` product preview не требует Viewer HTTP geometry endpoint: scene обрабатывается в browser runtime.
 
 ### POST `/svg3d-api/upload-svg`
 
@@ -237,7 +237,7 @@ npm test
 
 Текущий test suite проверяет в том числе:
 
-- strict `PreviewSceneV1` parsing;
+- strict `PreviewScene` parsing;
 - multi-depth topology, overlap/nesting, asymmetric orientation и text anchoring;
 - объединение пересекающихся SVG-карманов;
 - построение top regions и вложенных островков;
@@ -312,7 +312,7 @@ Viewer остаётся вспомогательным сервисом прое
 - менять исходные STL или NC данные ради визуального удобства;
 - вводить скрытые unit conversion или геометрический scale.
 
-Текущий product handoff через `localStorage[payloadKey]` one-shot и same-origin. Его можно заменить только при конкретной необходимости, сохранив `PreviewSceneV1` как контракт.
+Текущий product handoff через `localStorage[payloadKey]` one-shot и same-origin. Его можно заменить только при конкретной необходимости, сохранив `PreviewScene` как контракт.
 
 ## Standalone Shared UI distribution
 

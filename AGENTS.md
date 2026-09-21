@@ -6,7 +6,7 @@ This repository contains an auxiliary 3D preview and diagnostics service for Lay
 
 It supports four separate workflows:
 
-- `PreviewSceneV1` → canonical product 3D layment preview;
+- `PreviewScene` → canonical product 3D layment preview;
 - SVG layout → generated 3D preview for explicit debug/legacy diagnostics;
 - uploaded STL → persistent preview by generated id;
 - local NC file → debug visualization of G0/G1/G2/G3 over a layment bounding box.
@@ -19,7 +19,7 @@ Keep these concerns separate:
 
 ```text
 Parsing
-  PreviewSceneV1 / SVG / STL / NC input interpretation
+  PreviewScene / SVG / STL / NC input interpretation
 
 Model building
   normalized geometry, regions, toolpath segments, material classification
@@ -144,7 +144,7 @@ The mode contract is:
 ```text
 No payload query                 -> debug mode / SVG tool
 ?debug=1                         -> forced debug mode
-?payloadKey=<key>                -> customer-facing PreviewSceneV1 preview
+?payloadKey=<key>                -> customer-facing PreviewScene preview
 ?debug=1&payloadKey=<key>        -> explicit legacy SVG payload diagnostics
 ?stl=<id>                        -> customer-facing STL preview
 ```
@@ -153,7 +153,7 @@ Preview mode hides debug controls and uses preview lighting, shadows and present
 
 Do not let debug-only controls or diagnostic text leak into customer-facing preview mode.
 
-`payloadKey` integration currently uses same-origin `localStorage` and removes the payload after consumption. In the normal product path the stored value is strict `PreviewSceneV1`; legacy SVG payload aliases are accepted only through the explicit debug path. Changing this handoff is an integration-contract change and must be documented.
+`payloadKey` integration currently uses same-origin `localStorage` and removes the payload after consumption. In the normal product path the stored value is strict `PreviewScene`; legacy SVG payload aliases are accepted only through the explicit debug path. Changing this handoff is an integration-contract change and must be documented.
 
 ## API contracts
 
@@ -167,7 +167,7 @@ GET  /svg3d-api/stl/:id
 
 Uploads use `multipart/form-data` with field name `file`.
 
-The canonical `PreviewSceneV1` product preview is browser-side and must not be routed through `/svg3d-api/upload-svg`.
+The canonical `PreviewScene` product preview is browser-side and must not be routed through `/svg3d-api/upload-svg`.
 
 Do not change route paths, response shapes or file limits as an incidental refactor.
 
