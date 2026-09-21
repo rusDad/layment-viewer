@@ -9,7 +9,7 @@ P4 Viewer renderer and P5 product cutover are complete on `main`.
 
 Implemented by PR #56, with the PreviewScene text-baseline correction in PR #57:
 
-- strict `PreviewSceneV1` parsing at the Viewer boundary;
+- strict `PreviewScene` parsing at the Viewer boundary;
 - contour, rectangle and circle pockets with independent depths;
 - deterministic multi-depth boolean layers using `polygon-clipping`;
 - overlap, nesting, islands and identical-depth unions;
@@ -27,7 +27,7 @@ Run the complete flow over real HTTP/static hosting using the deployed Designer/
 1. build a Designer layout with a rotated asymmetric contour, contour depth override, rectangle and circle at different depths;
 2. open product 3D preview;
 3. confirm Designer calls `POST /api/preview/scene` and sends no SVG/PNG geometry;
-4. confirm the stored payload is strict `PreviewSceneV1` (`version: 1`, `origin-bottom-left`, distinct depths, no catalog/storage fields);
+4. confirm the stored payload is strict `PreviewScene` (`schemaVersion: 1`, `origin-bottom-left`, distinct depths, no catalog/storage fields);
 5. confirm Viewer selects `PreviewSceneViewer` and renders orientation, overlap/nesting and independent depths correctly;
 6. confirm explicit SVG debug mode remains usable independently.
 
@@ -37,6 +37,6 @@ After this smoke is recorded, close this roadmap; no further P4/P5 implementatio
 
 ## Deferred / non-goals
 
-The current one-shot same-origin `localStorage` handoff may remain until measured scene sizes justify a transport change. Any later handoff replacement must preserve `PreviewSceneV1`.
+The current one-shot same-origin `localStorage` handoff may remain until measured scene sizes justify a transport change. Any later handoff replacement must preserve `PreviewScene`.
 
 STL generation, Viewer-side manufacturing validation, public Geometry V3 exposure, pricing/order changes and runtime DXF parsing remain out of scope.

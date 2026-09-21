@@ -1,4 +1,4 @@
-# PreviewSceneV1 — current product preview contract
+# PreviewScene — current product preview contract
 
 Status: active Designer producer contract
 Date: 2026-08-14
@@ -11,7 +11,7 @@ EditorDocument
   -> POST /api/preview/scene
   -> prepare_manufacturing_scene()
   -> ManufacturingOrder (OrderManufacturingFrame)
-  -> PreviewSceneV1
+  -> PreviewScene
   -> temporary localStorage handoff
   -> layment-viewer
 ```
@@ -60,13 +60,13 @@ texts[]:
 
 Customer data, workspace snapshots, SVG/PNG artifacts and Geometry V3 are forbidden.
 
-## PreviewSceneV1 response
+## PreviewScene response
 
 The strict response is in OrderManufacturingFrame (`origin-bottom-left`):
 
 ```json
 {
-  "version": 1,
+  "schemaVersion": 1,
   "units": "mm",
   "coordinateSystem": "origin-bottom-left",
   "layment": {
@@ -120,4 +120,4 @@ frontend/src/editor/core/exportBuilders.ts
 frontend/src/shell/orderApi.ts
 ```
 
-The localStorage key and `/svg3d/?payloadKey=...` URL are a temporary handoff mechanism, not fields or guarantees of `PreviewSceneV1`.
+The localStorage key and `/svg3d/?payloadKey=...` URL are a temporary handoff mechanism, not fields or guarantees of `PreviewScene`.

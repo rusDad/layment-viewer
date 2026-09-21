@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { buildPreviewSceneLayers, parsePreviewSceneV1 } from './PreviewSceneModel.mjs';
+import { buildPreviewSceneLayers, parsePreviewScene } from './PreviewSceneModel.mjs';
 import { resolvePreviewTextTransform } from './PreviewTextTransform.js';
 
 const TOP_COLOR = 0x4a4a4a;
@@ -16,12 +16,12 @@ export class PreviewSceneViewer {
     this.ctx.setLoadingState();
     const key = this.ctx.payloadKey;
     try {
-      if (!key) throw new Error('PreviewSceneV1 не передан.');
+      if (!key) throw new Error('PreviewScene не передан.');
       const raw = localStorage.getItem(key);
-      if (!raw) throw new Error('PreviewSceneV1 не передан.');
-      const scene = parsePreviewSceneV1(JSON.parse(raw));
+      if (!raw) throw new Error('PreviewScene не передан.');
+      const scene = parsePreviewScene(JSON.parse(raw));
       this.render(scene);
-      this.ctx.setSuccessState('PreviewSceneV1');
+      this.ctx.setSuccessState('PreviewScene');
     } catch (error) {
       this.ctx.setErrorState(error instanceof Error ? error.message : 'Не удалось построить 3D предпросмотр.');
     } finally {
